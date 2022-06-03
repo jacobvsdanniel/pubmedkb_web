@@ -38,7 +38,7 @@ Dependencies
 
 Download dataset
 - https://drive.google.com/file/d/1OET8rVc08ccAS8zByK8iB5CP5T4zb7jc/view?usp=sharing
-- 322 MB
+- 322 MB zip file
 - A 1/10 sample of all data
 - Unzip to *./kb_1g_data*
 
