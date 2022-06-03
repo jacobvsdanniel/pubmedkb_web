@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>REL Query</title>
+    <style>
+        table {
+            font-family: Helvetica, sans-serif;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        tr {
+            background-color: #f5f5f5;
+        }
+        tr:hover {
+            background-color: #fcfcfc;
+        }
+        td, th {
+            border: 1px solid #dddddd;
+            text-align: left;
+            padding: 8px;
+        }
+        th {
+            padding-top: 12px;
+            padding-bottom: 12px;
+            text-align: left;
+            background-color: #04AA6D;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+
+<div style="font-size: 16px; font-family: Helvetica, sans-serif;">
+    pubmedKB API:&nbsp;&nbsp;<a href="nen">NEN</a>&nbsp;&nbsp;<a href="rel">REL</a>
+</div>
+<br />
+<h1 style="font-family: Helvetica, sans-serif;">REL Query</h1>
+
+<h3 style="font-family: Helvetica, sans-serif;">Entity A</h3>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label>Query by:</label>
+<select id="sl_e1_filter" style="font-size: 14px; height: 25px;">
+    <option value="type_id_name">Type &amp; ID &amp; Name</option>
+    <option value="type_id" selected="selected">Type &amp; ID</option>
+    <option value="type_name">Type &amp; Name</option>
+</select>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label>Type:</label>
+<select id="sl_e1_type" style="font-size: 14px; height: 25px;">
+    <option value="Disease">Disease</option>
+    <option value="Chemical">Chemical</option>
+    <option value="Gene">Gene</option>
+    <option value="ProteinMutation">ProteinMutation</option>
+    <option value="DNAMutation">DNAMutation</option>
+    <option value="SNP" selected="selected">SNP</option>
+    <option value="CopyNumberVariant">CopyNumberVariant</option>
+    <option value="Species">Species</option>
+    <option value="CellLine">CellLine</option>
+    <option value="Chromosome">Chromosome</option>
+    <option value="RefSeq">RefSeq</option>
+    <option value="GenomicRegion">GenomicRegion</option>
+    <option value="Genus">Genus</option>
+</select>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label>ID:</label>
+<textarea id="ta_e1_id" style="font-size: 14px; width: 100px; height: 18px;">RS#:4925</textarea>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label>Name:</label>
+<textarea id="ta_e1_name" style="font-size: 14px; width: 100px; height: 18px;">???</textarea>
+
+<h3 style="font-family: Helvetica, sans-serif;">Entity B</h3>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label>Query by:</label>
+<select id="sl_e2_filter" style="font-size: 14px; height: 25px;">
+    <option value="type_id_name" selected="selected">Type &amp; ID &amp; Name</option>
+    <option value="type_id">Type &amp; ID</option>
+    <option value="type_name">Type &amp; Name</option>
+</select>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label>Type:</label>
+<select id="sl_e2_type" style="font-size: 14px; height: 25px;">
+    <option value="Disease" selected="selected">Disease</option>
+    <option value="Chemical">Chemical</option>
+    <option value="Gene">Gene</option>
+    <option value="ProteinMutation">ProteinMutation</option>
+    <option value="DNAMutation">DNAMutation</option>
+    <option value="SNP">SNP</option>
+    <option value="CopyNumberVariant">CopyNumberVariant</option>
+    <option value="Species">Species</option>
+    <option value="CellLine">CellLine</option>
+    <option value="Chromosome">Chromosome</option>
+    <option value="RefSeq">RefSeq</option>
+    <option value="GenomicRegion">GenomicRegion</option>
+    <option value="Genus">Genus</option>
+</select>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label>ID:</label>
+<textarea id="ta_e2_id" style="font-size: 14px; width: 100px; height: 18px;">MESH:D012871</textarea>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label>Name:</label>
+<textarea id="ta_e2_name" style="font-size: 14px; width: 100px; height: 18px;">skin lesions</textarea>
+
+<h3 style="font-family: Helvetica, sans-serif;">Query</h3>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label>Query by:</label>
+<select id="sl_query_filter" style="font-size: 14px; height: 25px;">
+    <option value="AB">Un-ordered pair (A, B)</option>
+    <option value="A">Entity A</option>
+    <option value="B">Entity B</option>
+    <option value="PMID">PMID</option>
+</select>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label>Max #rel per annotator:</label>
+<textarea id="ta_query_rels" style="font-size: 14px; width: 100px; height: 18px;">10</textarea>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label>PMID:</label>
+<textarea id="ta_query_pmid" style="font-size: 14px; width: 100px; height: 18px;">22494505</textarea>
+(ignored if query by entity or entity pair)
+
+<br /><br /><br />
+<button type="submit" class="input_submit" style="font-size: 18px; width: 100px; height: 30px;" onClick="run_query()">show</button>
+<br />
+<div id="div_status">Ready</div>
+<br /><br />
+
+<div style="font-size: 30px; font-family: Arial, Helvetica, sans-serif;">Result<br /><br /></div>
+<div id="div_result" style="width: 1300px; font-size: 14px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif;">None</div>
+
+<script type="text/javascript" src="{{ url_for('static', filename='rel.js') }}"></script>
+
+</body>
+
+</html>
