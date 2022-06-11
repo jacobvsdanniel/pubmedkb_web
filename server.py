@@ -254,7 +254,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-host", default="0.0.0.0")
     parser.add_argument("-port", default="12345")
-    parser.add_argument("--kb_dir", default="kb_1g_data")
+    parser.add_argument("--kb_dir", default="kb_data")
     arg = parser.parse_args()
 
     global kb
