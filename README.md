@@ -38,10 +38,9 @@ Dependencies
 ## How to Run
 
 Download dataset
-- https://drive.google.com/file/d/1OET8rVc08ccAS8zByK8iB5CP5T4zb7jc/view?usp=sharing
-- 322 MB zip file
-- A 1/10 sample of all data
-- Unzip to *./kb_1g_data*
+- [14GB Dataset](https://drive.google.com/file/d/1Vx1CsIEJTRxUrXuBkc_0lyrj99KfgMqS/view?usp=sharing) (3GB zip file): full data, limited access
+- [1GB Dataset](https://drive.google.com/file/d/1OET8rVc08ccAS8zByK8iB5CP5T4zb7jc/view?usp=sharing) (300MB zip file): 1/10 of full data, shared
+- Unzip to *./kb_data*
 
 Start server
 ```bash
