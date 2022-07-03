@@ -25,9 +25,9 @@ Functions
   - Look up relations and evidence sentences for entity or entity pair
   - Specify an entity by name and/or ID
 
-Requirements
-  - Disk: 2GB (for the 1/10 dataset)
-  - Memory: 6GB (for the 1/10 dataset)
+Requirements for the disk version of full dataset
+  - Disk: 13GB
+  - Memory: 13GB
   - CPU: 1 thread
 
 Dependencies
@@ -38,15 +38,14 @@ Dependencies
 ## How to Run
 
 Download dataset
-- [14GB Dataset](https://drive.google.com/file/d/1Vx1CsIEJTRxUrXuBkc_0lyrj99KfgMqS/view?usp=sharing) (3GB zip file): full data, limited access
-- [1GB Dataset](https://drive.google.com/file/d/1OET8rVc08ccAS8zByK8iB5CP5T4zb7jc/view?usp=sharing) (300MB zip file): 1/10 of full data, shared
-- Unzip to *./kb_data*
+- [disk_full](https://drive.google.com/file/d/1kdFTW3AMX3rCFTvGUUr8qX_-2Emb9bEb/view?usp=sharing) (3GB zip file): the disk version of full dataset, limited access
+- [memory_full](https://drive.google.com/file/d/1Vx1CsIEJTRxUrXuBkc_0lyrj99KfgMqS/view?usp=sharing) (3GB zip file): the memory version of full dataset, limited access
+- [memory_1/10](https://drive.google.com/file/d/1OET8rVc08ccAS8zByK8iB5CP5T4zb7jc/view?usp=sharing) (300MB zip file): the memory version of 1/10 dataset , shared
 
 Start server
 ```bash
-python server.py
+python server.py -host [host_ip] -port [host_port] --kb_dir [unzipped_folder] --kb_type [disk/memory]
 ```
 
 Connect to server
-- Open browser and connect to *[server_ip]:12345*
-- Or, if on the same machine, connect to *localhost:12345*
+- Open browser and connect to *[host_ip]:[host_port]*
