@@ -39,20 +39,6 @@ def read_lines(file, line_by_line=False, write_log=True):
     return line_list
 
 
-def write_lines(file, line_list, write_log=True):
-    if write_log:
-        lines = len(line_list)
-        logger.info(f"Writing {lines:,} lines")
-
-    with open(file, "w", encoding="utf8") as f:
-        for line in line_list:
-            f.write(f"{line}\n")
-
-    if write_log:
-        logger.info(f"Written to {file}")
-    return
-
-
 def read_json(file, is_jsonl=False, write_log=True):
     if write_log:
         logger.info(f"Reading {file}")
@@ -72,24 +58,6 @@ def read_json(file, is_jsonl=False, write_log=True):
     return data
 
 
-def write_json(file, data, is_jsonl=False, indent=None, write_log=True):
-    if write_log:
-        objects = len(data)
-        logger.info(f"Writing {objects:,} objects")
-
-    with open(file, "w", encoding="utf8") as f:
-        if is_jsonl:
-            for datum in data:
-                json.dump(datum, f)
-                f.write("\n")
-        else:
-            json.dump(data, f, indent=indent)
-
-    if write_log:
-        logger.info(f"Written to {file}")
-    return data
-
-
 def read_csv(file, dialect, write_log=True):
     if write_log:
         logger.info(f"Reading {file}")
@@ -102,21 +70,6 @@ def read_csv(file, dialect, write_log=True):
         rows = len(row_list)
         logger.info(f"Read {rows:,} rows")
     return row_list
-
-
-def write_csv(file, dialect, row_list, write_log=True):
-    if write_log:
-        rows = len(row_list)
-        logger.info(f"Writing {rows:,} rows")
-
-    with open(file, "w", encoding="utf8", newline="") as f:
-        writer = csv.writer(f, dialect=dialect)
-        for row in row_list:
-            writer.writerow(row)
-
-    if write_log:
-        logger.info(f"Written to {file}")
-    return
 
 
 class NEN:
@@ -187,7 +140,6 @@ class KB:
         }
         self.index = {
             "pmid": None,
-            "type_id_name": None,
             "type_id": None,
             "type_name": None,
         }
@@ -200,15 +152,11 @@ class KB:
 
     def load_data(self, data_type=("evidence", "annotation", "sentence")):
         for name in data_type:
-            assert name in ("evidence", "annotation", "sentence")
-        for name in data_type:
             file = os.path.join(self.data_dir, f"{name}.jsonl")
             self.data[name] = read_lines(file, line_by_line=True)
         return
 
-    def load_index(self, index_type=("pmid", "type_id_name", "type_id", "type_name")):
-        for name in index_type:
-            assert name in ("pmid", "type_id_name", "type_id", "type_name")
+    def load_index(self, index_type=("pmid", "type_id", "type_name")):
         for name in index_type:
             file = os.path.join(self.data_dir, f"{name}.jsonl")
             key_value_list = read_json(file, is_jsonl=True)
@@ -220,15 +168,21 @@ class KB:
 
     def get_evidence_ids_by_pmid(self, pmid):
         assert isinstance(pmid, str)
-        assert self.index["pmid"] is not None
         id_list = self.index["pmid"].get(pmid, [])
         return id_list
 
     def get_evidence_ids_by_entity(self, entity, key="type_id_name"):
         assert isinstance(entity, tuple)
         assert len(entity) == len(key.split("_"))
-        assert self.index[key] is not None
-        id_list = self.index[key].get(entity, [])
+        if key in ["type_id", "type_name"]:
+            id_list = self.index[key].get(entity, [])
+        elif key == "type_id_name":
+            _type, _id, name = entity
+            id_list_1 = self.index["type_id"].get((_type, _id), [])
+            id_list_2 = self.index["type_name"].get((_type, name), [])
+            id_list = sorted(set(id_list_1) & set(id_list_2))
+        else:
+            assert False
         return id_list
 
     def get_evidence_ids_by_pair(self, pair, key=("type_id_name", "type_id_name")):
@@ -238,18 +192,95 @@ class KB:
         return id_list
 
     def get_evidence_by_id(self, _id, return_annotation=True, return_sentence=True):
-        assert self.data["evidence"] is not None
         evidence = self.data["evidence"][_id]
         head, tail, annotation, pmid, sentence = json.loads(evidence)
 
         if return_annotation:
-            assert self.data["annotation"] is not None
             annotation = self.data["annotation"][annotation]
             annotation = json.loads(annotation)
 
         if return_sentence:
-            assert self.data["sentence"] is not None
             sentence = self.data["sentence"][sentence]
+            sentence = json.loads(sentence)
+
+        return head, tail, annotation, pmid, sentence
+
+
+class DiskKB:
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self.nen = None
+        self.data = {
+            "sentence": None,
+            "annotation": None,
+            "evidence": None,
+        }
+        self.index = {
+            "pmid": None,
+            "type_id": None,
+            "type_name": None,
+        }
+        return
+
+    def load_nen(self):
+        nen_file = os.path.join(self.data_dir, "type_id_name_frequency.csv")
+        self.nen = NEN(nen_file)
+        return
+
+    def load_data(self, data_type=("evidence", "annotation", "sentence")):
+        for name in data_type:
+            file = os.path.join(self.data_dir, f"{name}.jsonl")
+            self.data[name] = open(file, "r", encoding="utf8")
+        return
+
+    def load_index(self, index_type=("pmid", "type_id", "type_name")):
+        for name in index_type:
+            file = os.path.join(self.data_dir, f"{name}.jsonl")
+            key_value_list = read_json(file, is_jsonl=True)
+            if name == "pmid":
+                self.index[name] = {key: value for key, value in key_value_list}
+            else:
+                self.index[name] = {tuple(key): value for key, value in key_value_list}
+        return
+
+    def get_evidence_ids_by_pmid(self, pmid):
+        assert isinstance(pmid, str)
+        id_list = self.index["pmid"].get(pmid, [])
+        return id_list
+
+    def get_evidence_ids_by_entity(self, entity, key="type_id_name"):
+        assert isinstance(entity, tuple)
+        assert len(entity) == len(key.split("_"))
+        if key in ["type_id", "type_name"]:
+            id_list = self.index[key].get(entity, [])
+        elif key == "type_id_name":
+            _type, _id, name = entity
+            id_list_1 = self.index["type_id"].get((_type, _id), [])
+            id_list_2 = self.index["type_name"].get((_type, name), [])
+            id_list = sorted(set(id_list_1) & set(id_list_2))
+        else:
+            assert False
+        return id_list
+
+    def get_evidence_ids_by_pair(self, pair, key=("type_id_name", "type_id_name")):
+        head_id_list = self.get_evidence_ids_by_entity(pair[0], key[0])
+        tail_id_list = self.get_evidence_ids_by_entity(pair[1], key[1])
+        id_list = sorted(set(head_id_list) & set(tail_id_list))
+        return id_list
+
+    def get_evidence_by_id(self, _id, return_annotation=True, return_sentence=True):
+        self.data["evidence"].seek(_id)
+        evidence = self.data["evidence"].readline()[:-1]
+        head, tail, annotation, pmid, sentence = json.loads(evidence)
+
+        if return_annotation:
+            self.data["annotation"].seek(annotation)
+            annotation = self.data["annotation"].readline()[:-1]
+            annotation = json.loads(annotation)
+
+        if return_sentence:
+            self.data["sentence"].seek(sentence)
+            sentence = self.data["sentence"].readline()[:-1]
             sentence = json.loads(sentence)
 
         return head, tail, annotation, pmid, sentence

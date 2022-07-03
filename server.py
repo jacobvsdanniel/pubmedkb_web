@@ -7,7 +7,7 @@ import argparse
 
 from flask import Flask, render_template, request
 
-from kb_utils import KB
+from kb_utils import KB, DiskKB
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
@@ -176,6 +176,7 @@ def run_rel():
     # collect rel by annotator
     annotator_list = ["odds_ratio", "rbert_cre", "spacy_ore", "openie_ore"]
     annotator_to_rel = {annotator: [] for annotator in annotator_list}
+    full_annotator_set = set()
     rels = 0
     for rel_id in rel_id_list:
         head, tail, annotation, pmid, sentence = kb.get_evidence_by_id(
@@ -183,6 +184,9 @@ def run_rel():
         )
         annotator, annotation = annotation
         if len(annotator_to_rel[annotator]) >= query_rels:
+            full_annotator_set.add(annotator)
+            if len(full_annotator_set) == len(annotator_list):
+                break
             continue
         head = ", ".join(head)
         tail = ", ".join(tail)
@@ -194,8 +198,6 @@ def run_rel():
             annotation = ", ".join(annotation)
         annotator_to_rel[annotator].append((head, tail, annotation, pmid, sentence))
         rels += 1
-        if rels >= query_rels:
-            break
 
     # create html result
     result = ""
@@ -254,11 +256,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-host", default="0.0.0.0")
     parser.add_argument("-port", default="12345")
-    parser.add_argument("--kb_dir", default="kb_data")
+    parser.add_argument("--kb_dir", default="diskkb")
+    parser.add_argument("--kb_type", default="disk", choices=["memory", "disk"])
     arg = parser.parse_args()
 
     global kb
-    kb = KB(arg.kb_dir)
+    kb = KB(arg.kb_dir) if arg.kb_type == "memory" else DiskKB(arg.kb_dir)
     kb.load_nen()
     kb.load_data()
     kb.load_index()
