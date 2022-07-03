@@ -25,7 +25,7 @@ Functions
   - Look up relations and evidence sentences for entity or entity pair
   - Specify an entity by name and/or ID
 
-Requirements for the disk version of full dataset
+Requirements for the disk version of the full dataset
   - Disk: 13GB
   - Memory: 13GB
   - CPU: 1 thread
@@ -38,9 +38,9 @@ Dependencies
 ## How to Run
 
 Download dataset
-- [disk_full](https://drive.google.com/file/d/1kdFTW3AMX3rCFTvGUUr8qX_-2Emb9bEb/view?usp=sharing) (3GB zip file): the disk version of full dataset, limited access
-- [memory_full](https://drive.google.com/file/d/1Vx1CsIEJTRxUrXuBkc_0lyrj99KfgMqS/view?usp=sharing) (3GB zip file): the memory version of full dataset, limited access
-- [memory_1/10](https://drive.google.com/file/d/1OET8rVc08ccAS8zByK8iB5CP5T4zb7jc/view?usp=sharing) (300MB zip file): the memory version of 1/10 dataset , shared
+- [disk_full](https://drive.google.com/file/d/1kdFTW3AMX3rCFTvGUUr8qX_-2Emb9bEb/view?usp=sharing) (3GB zip file): the disk version of the full dataset, limited access
+- [memory_full](https://drive.google.com/file/d/1Vx1CsIEJTRxUrXuBkc_0lyrj99KfgMqS/view?usp=sharing) (3GB zip file): the memory version of the full dataset, limited access
+- [memory_1/10](https://drive.google.com/file/d/1OET8rVc08ccAS8zByK8iB5CP5T4zb7jc/view?usp=sharing) (300MB zip file): the memory version of the 1/10 dataset, shared
 
 Start server
 ```bash
