@@ -44,7 +44,7 @@ Download dataset
 
 Start server
 ```bash
-python server.py -host [host_ip] -port [host_port] --kb_dir [unzipped_folder] --kb_type [disk/memory]
+python server.py -host [host_ip] -port [host_port] --kb_dir [unzipped_dataset_folder] --kb_type [disk/memory]
 ```
 
 Connect to server
