@@ -38,9 +38,9 @@ Dependencies
 ## How to Run
 
 Download dataset
-- [disk_full](https://drive.google.com/file/d/1kdFTW3AMX3rCFTvGUUr8qX_-2Emb9bEb/view?usp=sharing) (3GB zip file): the disk version of the full dataset, limited access
-- [memory_full](https://drive.google.com/file/d/1Vx1CsIEJTRxUrXuBkc_0lyrj99KfgMqS/view?usp=sharing) (3GB zip file): the memory version of the full dataset, limited access
-- [memory_1/10](https://drive.google.com/file/d/10_UmG_ozWSrvFB9vJ0TfY41WHCzswmhm/view?usp=sharing) (300MB zip file): the memory version of the 1/10 dataset, shared
+- [disk_full](https://drive.google.com/file/d/10IBsTREtvZQBiaWXEWKPKYfwFBkv7c64/view?usp=sharing) (3.4GB zip file): the disk version of the full dataset, limited access
+- [memory_full](https://drive.google.com/file/d/16QvI9bx-A_hXU0MQIyA9ZqUnGsbZTa1L/view?usp=sharing) (3.1GB zip file): the memory version of the full dataset, limited access
+- [memory_small](https://drive.google.com/file/d/10_UmG_ozWSrvFB9vJ0TfY41WHCzswmhm/view?usp=sharing) (315MB zip file): the memory version of the small dataset, shared
 
 Start server
 ```bash
