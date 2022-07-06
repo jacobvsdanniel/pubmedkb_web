@@ -156,7 +156,7 @@ def run_rel():
     query_pmid = data["query_pmid"].strip()
 
     logger.info(f"[Entity A] key={e1_filter} value={e1}")
-    logger.info(f"[Entity A] key={e2_filter} value={e2}")
+    logger.info(f"[Entity B] key={e2_filter} value={e2}")
     logger.info(f"[Query] filter={query_filter} #rel={query_rels:,} pmid={query_pmid}")
 
     # query rel ids
@@ -297,8 +297,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-host", default="0.0.0.0")
     parser.add_argument("-port", default="12345")
-    parser.add_argument("--kb_dir", default="287_319_memory")
-    parser.add_argument("--kb_type", default="memory", choices=["memory", "disk"])
+    parser.add_argument("--kb_dir", default="1_319_disk")
+    parser.add_argument("--kb_type", default="disk", choices=["memory", "disk"])
     arg = parser.parse_args()
 
     global kb
