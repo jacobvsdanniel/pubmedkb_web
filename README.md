@@ -40,7 +40,7 @@ Dependencies
 Download dataset
 - [disk_full](https://drive.google.com/file/d/1kdFTW3AMX3rCFTvGUUr8qX_-2Emb9bEb/view?usp=sharing) (3GB zip file): the disk version of the full dataset, limited access
 - [memory_full](https://drive.google.com/file/d/1Vx1CsIEJTRxUrXuBkc_0lyrj99KfgMqS/view?usp=sharing) (3GB zip file): the memory version of the full dataset, limited access
-- [memory_1/10](https://drive.google.com/file/d/1OET8rVc08ccAS8zByK8iB5CP5T4zb7jc/view?usp=sharing) (300MB zip file): the memory version of the 1/10 dataset, shared
+- [memory_1/10](https://drive.google.com/file/d/10_UmG_ozWSrvFB9vJ0TfY41WHCzswmhm/view?usp=sharing) (300MB zip file): the memory version of the 1/10 dataset, shared
 
 Start server
 ```bash
