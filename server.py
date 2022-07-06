@@ -4,7 +4,6 @@ import html
 import json
 import logging
 import argparse
-from collections import defaultdict
 
 from flask import Flask, render_template, request
 
@@ -178,20 +177,20 @@ def run_rel():
     annotation_id_to_rel = {}
     for rel_id in rel_id_list:
         head, tail, annotation_id, _pmid, _sentence_id = kb.get_evidence_by_id(
-            rel_id, return_annotation=False, return_sentence=False
+            rel_id, return_annotation=False, return_sentence=False,
         )
         if annotation_id not in annotation_id_to_rel:
             head, tail, (annotator, annotation), pmid, sentence = kb.get_evidence_by_id(
-                rel_id, return_annotation=True, return_sentence=True
+                rel_id, return_annotation=True, return_sentence=True,
             )
             annotation_id_to_rel[annotation_id] = {
-                "head_type": head[0], "head_id_set": {head[1]}, "head_name": head[2],
-                "tail_type": tail[0], "tail_id_set": {tail[1]}, "tail_name": tail[2],
-                "annotator": annotator, "annotation": annotation, "pmid": pmid, "sentence": sentence,
+                "head_set": {tuple(head)}, "tail_set": {tuple(tail)},
+                "annotator": annotator, "annotation": annotation,
+                "pmid": pmid, "sentence": sentence,
             }
         else:
-            annotation_id_to_rel[annotation_id]["head_id_set"].add(head[1])
-            annotation_id_to_rel[annotation_id]["tail_id_set"].add(tail[1])
+            annotation_id_to_rel[annotation_id]["head_set"].add(tuple(head))
+            annotation_id_to_rel[annotation_id]["tail_set"].add(tuple(tail))
     del rel_id_list
 
     # collect rel by annotator
@@ -248,21 +247,33 @@ def run_rel():
         annotator_html = html.escape(annotator)
 
         for rel in rel_list:
-            head_type, head_id_set, head_name = rel["head_type"], rel["head_id_set"], rel["head_name"]
-            tail_type, tail_id_set, tail_name = rel["tail_type"], rel["tail_id_set"], rel["tail_name"]
+            head_type_set, head_id_set, head_name_set = set(), set(), set()
+            tail_type_set, tail_id_set, tail_name_set = set(), set(), set()
             annotation = rel["annotation"]
             pmid = rel["pmid"]
             sentence = rel["sentence"]
 
-            head_tn = f"[{head_type}] {head_name}\n"
-            head_i = "\n".join(sorted(head_id_set))
-            tail_tn = f"[{tail_type}] {tail_name}\n"
-            tail_i = "\n".join(sorted(tail_id_set))
+            for _type, _id, name in rel["head_set"]:
+                head_type_set.add(f"[{_type}]")
+                head_id_set.add(_id)
+                head_name_set.add(name)
+            for _type, _id, name in rel["tail_set"]:
+                tail_type_set.add(f"[{_type}]")
+                tail_id_set.add(_id)
+                tail_name_set.add(name)
 
-            head_html = html.escape(head_tn) + "<i>" + html.escape(head_i) + "</i>"
-            tail_html = html.escape(tail_tn) + "<i>" + html.escape(tail_i) + "</i>"
+            head_name = "\n".join(sorted(head_name_set)) + "\n"
+            head_type = "\n".join(sorted(head_type_set)) + "\n"
+            head_id = "\n".join(sorted(head_id_set))
+
+            tail_name = "\n".join(sorted(tail_name_set)) + "\n"
+            tail_type = "\n".join(sorted(tail_type_set)) + "\n"
+            tail_id = "\n".join(sorted(tail_id_set))
+
+            head_html = "<b>" + html.escape(head_name) + "</b>" + html.escape(head_type) + "<i>" + html.escape(head_id) + "</i>"
+            tail_html = "<b>" + html.escape(tail_name) + "</b>" + html.escape(tail_type) + "<i>" + html.escape(tail_id) + "</i>"
             annotation_html = html.escape(annotation)
-            pmid_html = html.escape(pmid)
+            pmid_html = f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{pmid}</a>'
             sentence_html = html.escape(sentence)
 
             rel_table_html += \
@@ -282,145 +293,12 @@ def run_rel():
     return json.dumps(response)
 
 
-def backup_run_rel():
-    data = json.loads(request.data)
-
-    # input: e1
-    e1_filter = data["e1_filter"]
-    e1_type = data["e1_type"]
-    e1_id = data["e1_id"].strip()
-    e1_name = data["e1_name"].strip()
-    if e1_filter == "type_id_name":
-        e1 = (e1_type, e1_id, e1_name)
-    elif e1_filter == "type_id":
-        e1 = (e1_type, e1_id)
-    elif e1_filter == "type_name":
-        e1 = (e1_type, e1_name)
-    else:
-        assert False
-
-    # input: e2
-    e2_filter = data["e2_filter"]
-    e2_type = data["e2_type"]
-    e2_id = data["e2_id"].strip()
-    e2_name = data["e2_name"].strip()
-    if e2_filter == "type_id_name":
-        e2 = (e2_type, e2_id, e2_name)
-    elif e2_filter == "type_id":
-        e2 = (e2_type, e2_id)
-    elif e2_filter == "type_name":
-        e2 = (e2_type, e2_name)
-    else:
-        assert False
-
-    # input: query
-    query_filter = data["query_filter"]
-    query_rels = int(data["query_rels"])
-    query_pmid = data["query_pmid"].strip()
-
-    logger.info(f"[Entity A] key={e1_filter} value={e1}")
-    logger.info(f"[Entity A] key={e2_filter} value={e2}")
-    logger.info(f"[Query] filter={query_filter} #rel={query_rels:,} pmid={query_pmid}")
-
-    # query rel ids
-    if query_filter == "PMID":
-        rel_id_list = kb.get_evidence_ids_by_pmid(query_pmid)
-    elif query_filter == "AB":
-        rel_id_list = kb.get_evidence_ids_by_pair((e1, e2), key=(e1_filter, e2_filter))
-    elif query_filter == "A":
-        rel_id_list = kb.get_evidence_ids_by_entity(e1, key=e1_filter)
-    elif query_filter == "B":
-        rel_id_list = kb.get_evidence_ids_by_entity(e2, key=e2_filter)
-    else:
-        assert False
-    rel_ids = len(rel_id_list)
-    logger.info(f"Total #rel = {rel_ids:,}")
-
-    # collect rel by annotator
-    annotator_list = ["odds_ratio", "rbert_cre", "spacy_ore", "openie_ore"]
-    annotator_to_rel = {annotator: [] for annotator in annotator_list}
-    full_annotator_set = set()
-    rels = 0
-    for rel_id in rel_id_list:
-        head, tail, annotation, pmid, sentence = kb.get_evidence_by_id(
-            rel_id, return_annotation=True, return_sentence=True,
-        )
-        annotator, annotation = annotation
-        if len(annotator_to_rel[annotator]) >= query_rels:
-            full_annotator_set.add(annotator)
-            if len(full_annotator_set) == len(annotator_list):
-                break
-            continue
-        head = ", ".join(head)
-        tail = ", ".join(tail)
-        if annotator == "odds_ratio":
-            annotation = f"OR: {annotation[0]}, CI: {annotation[1]}, p-value: {annotation[2]}"
-        elif annotator == "rbert_cre":
-            annotation = f"{annotation[0]}: {annotation[1]}"
-        else:
-            annotation = ", ".join(annotation)
-        annotator_to_rel[annotator].append((head, tail, annotation, pmid, sentence))
-        rels += 1
-
-    # create html result
-    result = ""
-
-    annotator_table_html = f"<table><tr>"
-    for annotator in annotator_list:
-        annotator_table_html += f"<th>{annotator}</th>"
-    annotator_table_html += "</tr><tr>"
-    for annotator in annotator_list:
-        rels = len(annotator_to_rel[annotator])
-        logger.info(f"{annotator}: {rels:,} rels")
-        annotator_table_html += f"<td>{rels:,}</td>"
-    annotator_table_html += "</tr><table>"
-
-    result += f"{annotator_table_html}<br /><br />"
-
-    rel_table_html = \
-        f"<table><tr>" \
-        f'<th style="width:20%">Head</th>' \
-        f'<th style="width:20%">Tail</th>' \
-        f'<th style="width:5%">Annotator</th>' \
-        f'<th style="width:20%">Annotation</th>'\
-        f'<th style="width:5%">PMID</th>' \
-        f'<th style="width:30%">Sentence</th>' \
-        f"</tr>"
-
-    for annotator in annotator_list:
-        rel_list = annotator_to_rel[annotator]
-        annotator_html = html.escape(annotator)
-
-        for head, tail, annotation, pmid, sentence in rel_list:
-                head_html = html.escape(str(head))
-                tail_html = html.escape(str(tail))
-                annotation_html = html.escape(str(annotation))
-                pmid_html = html.escape(pmid)
-                sentence_html = html.escape(sentence)
-
-                rel_table_html += \
-                    f"<tr>" \
-                    f"<td>{head_html}</td>" \
-                    f"<td>{tail_html}</td>" \
-                    f"<td>{annotator_html}</td>" \
-                    f"<td>{annotation_html}</td>" \
-                    f"<td>{pmid_html}</td>" \
-                    f"<td>{sentence_html}</td>" \
-                    f"</tr>"
-
-    rel_table_html += "</table><br /><br /><br /><br /><br /><br /><br /><br /><br /><br />"
-    result += rel_table_html
-
-    response = {"result": result}
-    return json.dumps(response)
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-host", default="0.0.0.0")
     parser.add_argument("-port", default="12345")
-    parser.add_argument("--kb_dir", default="diskkb")
-    parser.add_argument("--kb_type", default="disk", choices=["memory", "disk"])
+    parser.add_argument("--kb_dir", default="287_319_memory")
+    parser.add_argument("--kb_type", default="memory", choices=["memory", "disk"])
     arg = parser.parse_args()
 
     global kb
