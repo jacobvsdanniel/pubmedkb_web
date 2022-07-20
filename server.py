@@ -297,7 +297,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-host", default="0.0.0.0")
     parser.add_argument("-port", default="12345")
-    parser.add_argument("--kb_dir", default="1_319_disk")
+    parser.add_argument("--kb_dir", default="pubmedKB-PTC/1_319_disk")
     parser.add_argument("--kb_type", default="disk", choices=["memory", "disk"])
     arg = parser.parse_args()
 
