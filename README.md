@@ -35,7 +35,11 @@ Dependencies
   - python3
   - Flask (a python package)
 
-## How to Run
+## How to Use the API
+
+See [wiki](https://github.com/jacobvsdanniel/pubmedkb_web/wiki)
+
+## How to Run the Web
 
 Download dataset
 - [disk_full](https://drive.google.com/file/d/10IBsTREtvZQBiaWXEWKPKYfwFBkv7c64/view?usp=sharing) (3.4GB zip file): the disk version of the full dataset, limited access
