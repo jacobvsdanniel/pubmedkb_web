@@ -25,6 +25,7 @@ csv.register_dialect(
     escapechar=None, lineterminator="\n", skipinitialspace=False,
 )
 kb = None
+show_eid, eid_list = False, []
 
 
 @app.route("/")
@@ -160,7 +161,9 @@ def run_rel():
     logger.info(f"[Query] filter={query_filter} #rel={query_rels:,} pmid={query_pmid}")
 
     # query rel ids
-    if query_filter == "PMID":
+    if eid_list:
+        rel_id_list = eid_list
+    elif query_filter == "PMID":
         rel_id_list = kb.get_evidence_ids_by_pmid(query_pmid)
     elif query_filter == "AB":
         rel_id_list = kb.get_evidence_ids_by_pair((e1, e2), key=(e1_filter, e2_filter))
@@ -187,10 +190,12 @@ def run_rel():
                 "head_set": {tuple(head)}, "tail_set": {tuple(tail)},
                 "annotator": annotator, "annotation": annotation,
                 "pmid": pmid, "sentence": sentence,
+                "evidence_id": [rel_id],
             }
         else:
             annotation_id_to_rel[annotation_id]["head_set"].add(tuple(head))
             annotation_id_to_rel[annotation_id]["tail_set"].add(tuple(tail))
+            annotation_id_to_rel[annotation_id]["evidence_id"].append(rel_id)
     del rel_id_list
 
     # collect rel by annotator
@@ -252,6 +257,7 @@ def run_rel():
             annotation = rel["annotation"]
             pmid = rel["pmid"]
             sentence = rel["sentence"]
+            evidence_id = rel["evidence_id"]
 
             for _type, _id, name in rel["head_set"]:
                 head_type_set.add(f"[{_type}]")
@@ -274,13 +280,26 @@ def run_rel():
             tail_html = "<b>" + html.escape(tail_name) + "</b>" + html.escape(tail_type) + "<i>" + html.escape(tail_id) + "</i>"
             annotation_html = html.escape(annotation)
             pmid_html = f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{pmid}</a>'
+
+            if isinstance(sentence, str):
+                section_type = "ABSTRACT"
+                text_type = "paragraph"
+            else:
+                sentence, section_type, text_type = sentence
             sentence_html = html.escape(sentence)
+            section_type_html = html.escape(f"{section_type} {text_type}")
+            sentence_html = f"{section_type_html}<br /><i>{sentence_html}</i>"
+
+            if show_eid:
+                evidence_id_html = "<br />" + html.escape(" ".join([str(_id) for _id in evidence_id]))
+            else:
+                evidence_id_html = ""
 
             rel_table_html += \
                 f"<tr>" \
                 f"<td><pre>{head_html}</pre></td>" \
                 f"<td><pre>{tail_html}</pre></td>" \
-                f"<td>{annotator_html}</td>" \
+                f"<td>{annotator_html}{evidence_id_html}</td>" \
                 f"<td>{annotation_html}</td>" \
                 f"<td>{pmid_html}</td>" \
                 f"<td>{sentence_html}</td>" \
@@ -297,8 +316,34 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-host", default="0.0.0.0")
     parser.add_argument("-port", default="12345")
+
+    # parser.add_argument("--kb_dir", default="pubmedKB-BERN/1_236_disk")
+    # parser.add_argument("--kb_dir", default="pubmedKB-PTC/287_319_memory")
     parser.add_argument("--kb_dir", default="pubmedKB-PTC/1_319_disk")
+    # parser.add_argument("--kb_dir", default="pubmedKB-PTC-FT/1_19778_disk")
+
+    # parser.add_argument("--kb_type", default="memory", choices=["memory", "disk"])
     parser.add_argument("--kb_type", default="disk", choices=["memory", "disk"])
+
+    parser.add_argument("--eid_list", default="")
+    # parser.add_argument(  # pubmedKB-PTC, V600E, MESH:D009369, #rel=20
+    #     "--eid_list",
+    #     default="3424943591,3424943714,3424943843,3424943967,3424944089,3424944209,"
+    #             "53579971,53580227,"
+    #             "2473843891,2473844014,2473844143,2473844267,2473844389,2473844509,"
+    #             "466766074,466766195,466766322,466766444,466766564,466766682"
+    # )
+    # parser.add_argument(  # pubmedKB-PTC-FT, V600E, MESH:D009369, #rel=20
+    #     "--eid_list",
+    #     default="72387678,72387804,72387924,72388052,72388171,72388288,"
+    #             "6559686,6559808,6559924,6560048,6560163,6560276,"
+    #             "78864632,78864756,78864874,78865000,78865117,78865232,"
+    #             "363611221,363611348,363611469,363611598,363611718,363611836"
+    # )
+
+    parser.add_argument("--show_eid", default="false")
+    # parser.add_argument("--show_eid", default="true")
+
     arg = parser.parse_args()
 
     global kb
@@ -306,6 +351,14 @@ def main():
     kb.load_nen()
     kb.load_data()
     kb.load_index()
+
+    global eid_list
+    if arg.eid_list:
+        for eid in arg.eid_list.split(","):
+            eid_list.append(int(eid))
+
+    global show_eid
+    show_eid = arg.show_eid == "true"
 
     app.run(host=arg.host, port=arg.port)
     return
