@@ -45,7 +45,9 @@ Dependencies
 
 ## Programmable API
 
-See [wiki](https://github.com/jacobvsdanniel/pubmedkb_web/wiki)
+- [wiki](https://github.com/jacobvsdanniel/pubmedkb_web/wiki)
+- [demo.py](https://github.com/jacobvsdanniel/pubmedkb_web/blob/main/demo.py)
+- [slides](https://github.com/jacobvsdanniel/pubmedkb_web/blob/main/pubmedKB_api.pdf)
 
 ## Host the Web
 
