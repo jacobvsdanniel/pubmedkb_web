@@ -11,7 +11,7 @@ Authors:
 
 ## Introduction
 
-This is a standalone, lightweight web server for pubmedKB, a knowledge base created from annotations of PubMed.
+This is a standalone, lightweight web server wrapped around the data API of *pubmedKB*, a knowledge base created from annotations of PubMed.
 
 See [pubmedkb_core](https://github.com/jacobvsdanniel/pubmedkb_core) for the core annotators behind the knowledge base. Or see our paper:
 
