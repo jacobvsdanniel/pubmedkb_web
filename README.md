@@ -33,21 +33,28 @@ Dependencies
   - python3
   - Flask (a python package)
 
-## How to Use the API
+## Download Datasets
+
+| dataset | zip size | memory-efficient | #papers | paper section | open access |
+| :-- | --: | :-: | --: | :-: | :-: |
+| [pubmedKB-PTC-disk](https://drive.google.com/file/d/10IBsTREtvZQBiaWXEWKPKYfwFBkv7c64/view?usp=sharing) | 3.4 GB | O | 10.7 M | abstract | X |
+| [pubmedKB-PTC-memory](https://drive.google.com/file/d/16QvI9bx-A_hXU0MQIyA9ZqUnGsbZTa1L/view?usp=sharing) | 3.1 GB | X | 10.7 M | abstract | X |
+| [pubmedKB-PTC-memory-small](https://drive.google.com/file/d/10_UmG_ozWSrvFB9vJ0TfY41WHCzswmhm/view?usp=sharing) | 314 MB | X | | abstract | O |
+| [pubmedKB-PTC-FT-disk](https://drive.google.com/file/d/1a-6Vg1SINpZsA4PXsiAnRwZvvJMe0nti/view?usp=sharing) | 3.7 GB | O | 1.6 M | full text | X |
+| [pubmedKB-BERN-disk](https://drive.google.com/file/d/1lzQg-Ng4E5M-o4pjy3WVS9aH-JDYaB2p/view?usp=sharing) | 1.6 GB | O | 4.3 M | abstract | X |
+
+## Programmable API
 
 See [wiki](https://github.com/jacobvsdanniel/pubmedkb_web/wiki)
 
-## How to Run the Web
+## Host the Web
 
-Download dataset
-- [disk_full](https://drive.google.com/file/d/10IBsTREtvZQBiaWXEWKPKYfwFBkv7c64/view?usp=sharing) (3.4GB zip file): the disk version of the full dataset, limited access
-- [memory_full](https://drive.google.com/file/d/16QvI9bx-A_hXU0MQIyA9ZqUnGsbZTa1L/view?usp=sharing) (3.1GB zip file): the memory version of the full dataset, limited access
-- [memory_small](https://drive.google.com/file/d/10_UmG_ozWSrvFB9vJ0TfY41WHCzswmhm/view?usp=sharing) (315MB zip file): the memory version of the small dataset, shared
-
-Start server
+#### Start server
 ```bash
 python server.py -host [host_ip] -port [host_port] --kb_dir [unzipped_dataset_folder] --kb_type [disk/memory]
 ```
 
-Connect to server
-- Open browser and connect to *[host_ip]:[host_port]*
+#### Connect to server
+
+Open browser and connect to *[host_ip]:[host_port]*
+
