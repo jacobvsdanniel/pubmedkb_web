@@ -1,6 +1,6 @@
 # pubmedKB web
 
-**Data access API and web server for [pubmedKB](https://github.com/jacobvsdanniel/pubmedkb_core)**
+**Full datasets, python API, and web GUI for [pubmedKB](https://github.com/jacobvsdanniel/pubmedkb_core)**
 
 Authors:
 - Peng-Hsuan Li (jacobvsdanniel [at] gmail.com)
@@ -11,7 +11,7 @@ Authors:
 
 ## Introduction
 
-This is a standalone, lightweight web server wrapped around the data access API of *pubmedKB*, a knowledge base created from annotations of PubMed. See [pubmedkb_core](https://github.com/jacobvsdanniel/pubmedkb_core) for the core annotators behind the knowledge base. Or see our paper:
+This repo hosts the full datasets, python API, and web GUI for *pubmedKB*, a knowledge base created from annotations of PubMed. See [pubmedkb_core](https://github.com/jacobvsdanniel/pubmedkb_core) for the core annotators behind the knowledge base. Or see our paper:
 
 *Peng-Hsuan Li, Ting-Fu Chen, Jheng-Ying Yu, Shang-Hung Shih, Chan-Hung Su, Yin-Hung Lin, Huai-Kuang Tsai, Hsueh-Fen Juan, Chien-Yu Chen and Jia-Hsin Huang, **pubmedKB: an interactive web server to explore biomedical entity relations from biomedical literature**, Nucleic Acids Research, 2022, [https://doi.org/10.1093/nar/gkac310](https://doi.org/10.1093/nar/gkac310)*
 
@@ -23,7 +23,7 @@ Functions
   - Look up relations and evidence sentences for entity or entity pair
   - Specify an entity by name and/or ID
 
-Requirements (pubmedKB-PTC-disk)
+Requirements (to host web GUI for pubmedKB-PTC-disk)
   - Disk: 13GB
   - Memory: 13GB
   - CPU: 1 thread
@@ -48,13 +48,13 @@ Dependencies
 | [pubmedKB-PTC-disk-small](https://drive.google.com/file/d/1EnrnGBkbrInu58bkoe9vSn-oRARWtbX0/view?usp=sharing) | 605 MB | 2.0 M | abstract | O | O |
 | [pubmedKB-PTC-FT-disk-small](https://drive.google.com/file/d/13Y5JWWAhbWRY5IiUu2D9b0JO31OjxECj/view?usp=sharing) | 781 MB | 336 K | full text | O | O |
 
-## Programmable API
+## Python API
 
 - [slides](https://github.com/jacobvsdanniel/pubmedkb_web/blob/main/pubmedKB_api.pdf)
 - [wiki](https://github.com/jacobvsdanniel/pubmedkb_web/wiki)
 - [demo.py](https://github.com/jacobvsdanniel/pubmedkb_web/blob/main/demo.py)
 
-## Host the Web
+## Web GUI
 
 #### Start server
 ```bash
