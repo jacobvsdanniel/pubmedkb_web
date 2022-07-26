@@ -1,6 +1,6 @@
 # pubmedKB web
 
-**End-to-end relation extraction for biomedical literature: Full datasets, python API, and web GUI**
+**End-to-end relation extraction for biomedical literature: full datasets, python API, and web GUI**
 
 **The core annotators, pretrained models, and training data can be downloaded at [pubmedKB core](https://github.com/jacobvsdanniel/pubmedkb_core)**
 
