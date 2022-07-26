@@ -317,9 +317,11 @@ def main():
     parser.add_argument("-host", default="0.0.0.0")
     parser.add_argument("-port", default="12345")
 
+    # parser.add_argument("--kb_dir", default="pubmedKB-BERN/189_236_disk")
     # parser.add_argument("--kb_dir", default="pubmedKB-BERN/1_236_disk")
-    # parser.add_argument("--kb_dir", default="pubmedKB-PTC/287_319_memory")
+    # parser.add_argument("--kb_dir", default="pubmedKB-PTC/256_319_disk")
     parser.add_argument("--kb_dir", default="pubmedKB-PTC/1_319_disk")
+    # parser.add_argument("--kb_dir", default="pubmedKB-PTC-FT/15823_19778_disk")
     # parser.add_argument("--kb_dir", default="pubmedKB-PTC-FT/1_19778_disk")
 
     # parser.add_argument("--kb_type", default="memory", choices=["memory", "disk"])
