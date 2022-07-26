@@ -23,7 +23,7 @@ Functions
   - Look up relations and evidence sentences for entity or entity pair
   - Specify an entity by name and/or ID
 
-Requirements for the disk version of the full dataset
+Requirements (pubmedKB-PTC-disk)
   - Disk: 13GB
   - Memory: 13GB
   - CPU: 1 thread
@@ -37,11 +37,15 @@ Dependencies
 
 | dataset | zip size | memory-efficient | #papers | paper section | open access |
 | :-- | --: | :-: | --: | :-: | :-: |
-| [pubmedKB-PTC-disk](https://drive.google.com/file/d/10IBsTREtvZQBiaWXEWKPKYfwFBkv7c64/view?usp=sharing) | 3.4 GB | O | 10.8 M | abstract | X |
 | [pubmedKB-PTC-memory](https://drive.google.com/file/d/16QvI9bx-A_hXU0MQIyA9ZqUnGsbZTa1L/view?usp=sharing) | 3.1 GB | X | 10.8 M | abstract | X |
-| [pubmedKB-PTC-memory-small](https://drive.google.com/file/d/10_UmG_ozWSrvFB9vJ0TfY41WHCzswmhm/view?usp=sharing) | 314 MB | X | 1.1 M | abstract | O |
+| [pubmedKB-PTC-disk](https://drive.google.com/file/d/10IBsTREtvZQBiaWXEWKPKYfwFBkv7c64/view?usp=sharing) | 3.4 GB | O | 10.8 M | abstract | X |
+| [pubmedKB-PTC-disk-small](https://drive.google.com/file/d/1EnrnGBkbrInu58bkoe9vSn-oRARWtbX0/view?usp=sharing) | 605 MB | X | 2.0 M | abstract | O |
 | [pubmedKB-PTC-FT-disk](https://drive.google.com/file/d/1a-6Vg1SINpZsA4PXsiAnRwZvvJMe0nti/view?usp=sharing) | 3.7 GB | O | 1.7 M | full text | X |
+| [pubmedKB-PTC-FT-disk-small](https://drive.google.com/file/d/13Y5JWWAhbWRY5IiUu2D9b0JO31OjxECj/view?usp=sharing) | 781 GB | O | 336 K | full text | O |
 | [pubmedKB-BERN-disk](https://drive.google.com/file/d/1lzQg-Ng4E5M-o4pjy3WVS9aH-JDYaB2p/view?usp=sharing) | 1.6 GB | O | 4.3 M | abstract | X |
+| [pubmedKB-BERN-disk-small](https://drive.google.com/file/d/1-kgaI-wK12CWGhgMnPtuARDzOu5tbWT8/view?usp=sharing) | 336 MB | O | 884 K | abstract | O |
+
+
 
 ## Programmable API
 
