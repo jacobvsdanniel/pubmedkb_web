@@ -6,6 +6,7 @@
 
 Authors:
 - Peng-Hsuan Li (jacobvsdanniel [at] gmail.com)
+- You-Chi Liu (you-chi.Liu.23 [at] dartmouth.edu)
 
 <!-- ![NEN](https://github.com/jacobvsdanniel/pubmedkb_web/blob/main/image_dir/web_nen.png) -->
 <!-- ![REL](https://github.com/jacobvsdanniel/pubmedkb_web/blob/main/image_dir/web_rel.png) -->
