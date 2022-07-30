@@ -4,6 +4,7 @@ import html
 import json
 import logging
 import argparse
+import traceback
 
 from flask import Flask, render_template, request
 
@@ -249,8 +250,8 @@ def run_rel():
     # result = get_summary(kb, summary_evidence_id_list, summary_target, summary_query)
     try:
         result = get_summary(kb, summary_evidence_id_list, summary_target, summary_query)
-    except Exception as e:
-        logger.info(e)
+    except Exception:
+        traceback.print_exc()
         result = "No summary. (Exception caught)"
     if not isinstance(result, str) or not result:
         logger.info(result)
