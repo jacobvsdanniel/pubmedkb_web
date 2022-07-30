@@ -996,7 +996,7 @@ def gen_summary_by_entity(kb,evidence_id_list,target):
                 if target[1][2] in ore_sorted[0]["head"]:
                     mention1 = ore_sorted[0]["head"][2]
                     mention2 = ore_sorted[0]["tail"][2]
-                elif target[1][2] in ore_sorted["tail"]:
+                elif target[1][2] in ore_sorted[0]["tail"]:
                     mention1= ore_sorted[0]["tail"][2]
                     mention2=ore_sorted[0]["head"][2]
             elif target[0] == "type_id":
