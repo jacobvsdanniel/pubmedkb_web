@@ -246,15 +246,16 @@ def run_rel():
     else:
         assert False
 
+    # result = get_summary(kb, summary_evidence_id_list, summary_target, summary_query)
     try:
         result = get_summary(kb, summary_evidence_id_list, summary_target, summary_query)
     except Exception as e:
         logger.info(e)
-        result = "No summary."
+        result = "No summary. (Exception caught)"
     if not isinstance(result, str) or not result:
         logger.info(result)
         result = "No summary."
-    result = '<div style="font-size: 16px; width: 650px; line-height: 200%">' \
+    result = '<div style="font-size: 16px; line-height: 200%">' \
              + html.escape(result) \
              + "</div><br /><br />"
 

@@ -826,7 +826,7 @@ def gen_summary_by_entity_pmid(kb,evidence_id_list,target):
                 if target[1][2] in ore_sorted[0]["head"]:
                     mention1 = ore_sorted[0]["head"][2]
                     mention2 = ore_sorted[0]["tail"][2]
-                elif target[1][2] in ore_sorted["tail"]:
+                elif target[1][2] in ore_sorted[0]["tail"]:
                     mention1= ore_sorted[0]["tail"][2]
                     mention2=ore_sorted[0]["head"][2]
             elif target[0] == "type_id":
@@ -1108,13 +1108,13 @@ def gen_summary_by_pair(kb,evidence_id_list,target):
             odds_list=random.choice(odds_list)
         if cre_sorted:
             if target[0] == "type_id_name" or target[0] == "type_name":
-                mention1 = odds_sorted["head"][2]
+                mention1 = cre_sorted["head"][2]
             if target[0] == "type_id" :
-                mention1 = odds_sorted["head"][1]
+                mention1 = cre_sorted["head"][1]
             if target[2] == "type_id_name" or target[2] == "type_name":
-                mention2 = odds_sorted["tail"][2]
+                mention2 = cre_sorted["tail"][2]
             if target[2] == "type_id" :
-                mention2 = odds_sorted["tail"][1]
+                mention2 = cre_sorted["tail"][1]
             if cre_sorted["head"][0] == "Disease" and (cre_sorted["tail"][0] == "SNP" or cre_sorted["tail"][0] == "ProteinMutation" or cre_sorted["tail"][0] =="CopyNumberVariant" or cre_sorted["tail"][0] == "DNAMutation"):
                 # switch head and tail           
                 tmp=mention1
@@ -1141,8 +1141,8 @@ def gen_summary_by_pair(kb,evidence_id_list,target):
                 relation1 = ' '.join(ore_sorted[0]["annotation"])
                 relation2= ' '.join(ore_sorted[1]["annotation"])
                 sent1='Moreover, there are also relations found between these two entities, which includes the following. "' + relation1 + '" (PMID: ' + ore_sorted[0]["pmid"] +'). "' + relation2+ '" (PMID: ' + ore_sorted[1]["pmid"] +').'
-                sent2='Notably,further relations between' + mention1 + " and " + mention2 +  'are present. "' + relation1 + '" (PMID: ' + ore_sorted[0]["pmid"] +'). "' + relation2+ '" (PMID: ' + ore_sorted[1]["pmid"] +').'
-                sent3= 'Btween these two entities, prior literature also entails that "' + + relation1 + '" (PMID: ' + ore_sorted[0]["pmid"] +') and "' + relation2+ '" (PMID: ' + ore_sorted[1]["pmid"] +').'
+                sent2='Notably, further relations between ' + mention1 + " and " + mention2 +  ' are present. "' + relation1 + '" (PMID: ' + ore_sorted[0]["pmid"] +'). "' + relation2+ '" (PMID: ' + ore_sorted[1]["pmid"] +').'
+                sent3= 'Btween these two entities, prior literature also entails that "' + relation1 + '" (PMID: ' + ore_sorted[0]["pmid"] +') and "' + relation2+ '" (PMID: ' + ore_sorted[1]["pmid"] +').'
             else:
                 mention1=ore_sorted[0]["head"][2]
                 mention2=ore_sorted[0]["tail"][2]
