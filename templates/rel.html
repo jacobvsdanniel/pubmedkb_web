@@ -39,13 +39,13 @@
 <br />
 <h1 style="font-family: Helvetica, sans-serif;">REL Query</h1>
 
-<h3 style="font-family: Helvetica, sans-serif;">Entity A</h3>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-<label>Query by:</label>
+<label style="font-family: Helvetica, sans-serif; font-weight: bold">Entity A:</label>
+&nbsp;&nbsp;
 <select id="sl_e1_filter" style="font-size: 14px; height: 25px;">
+    <option value="type_id" selected="selected">Type &amp; ID</option>
+    <option value="type_name">Type &amp; Name</option>
     <option value="type_id_name">Type &amp; ID &amp; Name</option>
-    <option value="type_id">Type &amp; ID</option>
-    <option value="type_name" selected="selected">Type &amp; Name</option>
 </select>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <label>Type:</label>
@@ -53,9 +53,9 @@
     <option value="Disease">Disease</option>
     <option value="Chemical">Chemical</option>
     <option value="Gene">Gene</option>
-    <option value="ProteinMutation">ProteinMutation</option>
+    <option value="ProteinMutation" selected="selected">ProteinMutation</option>
     <option value="DNAMutation">DNAMutation</option>
-    <option value="SNP" selected="selected">SNP</option>
+    <option value="SNP">SNP</option>
     <option value="CopyNumberVariant">CopyNumberVariant</option>
     <option value="Species">Species</option>
     <option value="CellLine">CellLine</option>
@@ -72,18 +72,19 @@
 </select>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <label>ID:</label>
-<textarea id="ta_e1_id" style="font-size: 14px; width: 100px; height: 18px;">RS#:4925</textarea>
+<textarea id="ta_e1_id" style="font-size: 14px; width: 100px; height: 18px;">HGVS:p.V600E</textarea>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <label>Name:</label>
-<textarea id="ta_e1_name" style="font-size: 14px; width: 100px; height: 18px;">rs4925</textarea>
+<textarea id="ta_e1_name" style="font-size: 14px; width: 100px; height: 18px;">V600E</textarea>
+<br /><br />
 
-<h3 style="font-family: Helvetica, sans-serif;">Entity B</h3>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-<label>Query by:</label>
+<label style="font-family: Helvetica, sans-serif; font-weight: bold">Entity B:</label>
+&nbsp;&nbsp;
 <select id="sl_e2_filter" style="font-size: 14px; height: 25px;">
-    <option value="type_id_name">Type &amp; ID &amp; Name</option>
     <option value="type_id" selected="selected">Type &amp; ID</option>
     <option value="type_name">Type &amp; Name</option>
+    <option value="type_id_name">Type &amp; ID &amp; Name</option>
 </select>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <label>Type:</label>
@@ -110,27 +111,33 @@
 </select>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <label>ID:</label>
-<textarea id="ta_e2_id" style="font-size: 14px; width: 100px; height: 18px;">MESH:D012871</textarea>
+<textarea id="ta_e2_id" style="font-size: 14px; width: 100px; height: 18px;">MESH:D009369</textarea>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <label>Name:</label>
-<textarea id="ta_e2_name" style="font-size: 14px; width: 100px; height: 18px;">skin lesions</textarea>
+<textarea id="ta_e2_name" style="font-size: 14px; width: 100px; height: 18px;">cancer</textarea>
+<br /><br /><br />
 
-<h3 style="font-family: Helvetica, sans-serif;">Query</h3>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-<label>Query by:</label>
+<label style="font-family: Helvetica, sans-serif; font-weight: bold">PMID:</label>
+&nbsp;&nbsp;
+<textarea id="ta_query_pmid" style="font-size: 14px; width: 100px; height: 18px;">35246262</textarea>
+<br /><br /><br />
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label style="font-family: Helvetica, sans-serif; font-weight: bold">Query by:</label>
+&nbsp;&nbsp;
 <select id="sl_query_filter" style="font-size: 14px; height: 25px;">
-    <option value="AB">Un-ordered pair (A, B)</option>
+    <option value="P">PMID</option>
     <option value="A">Entity A</option>
     <option value="B">Entity B</option>
-    <option value="PMID">PMID</option>
+    <option value="AB">Un-ordered pair (A, B)</option>
+    <option value="ABP" selected="selected">Un-ordered pair (A, B) in PMID</option>
+
 </select>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <label>Max #rel per annotator:</label>
 <textarea id="ta_query_rels" style="font-size: 14px; width: 100px; height: 18px;">10</textarea>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-<label>PMID:</label>
-<textarea id="ta_query_pmid" style="font-size: 14px; width: 100px; height: 18px;">22494505</textarea>
-(ignored if query by entity or entity pair)
 
 <br /><br /><br />
 <button type="submit" class="input_submit" style="font-size: 18px; width: 100px; height: 35px;" onClick="run_query()">show</button>
