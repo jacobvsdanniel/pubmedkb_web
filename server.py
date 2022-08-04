@@ -127,9 +127,7 @@ def run_rel():
 
     # input: e1
     e1_filter = data["e1_filter"]
-    e1_type = data["e1_type"]
-    e1_id = data["e1_id"].strip()
-    e1_name = data["e1_name"].strip()
+    e1_type, e1_id, e1_name = data["e1_type"], data["e1_id"].strip(), data["e1_name"].strip()
     if e1_filter == "type_id_name":
         e1 = (e1_type, e1_id, e1_name)
     elif e1_filter == "type_id":
@@ -138,12 +136,11 @@ def run_rel():
         e1 = (e1_type, e1_name)
     else:
         assert False
+    logger.info(f"[Entity A] key={e1_filter} value={e1}")
 
     # input: e2
     e2_filter = data["e2_filter"]
-    e2_type = data["e2_type"]
-    e2_id = data["e2_id"].strip()
-    e2_name = data["e2_name"].strip()
+    e2_type, e2_id, e2_name = data["e2_type"], data["e2_id"].strip(), data["e2_name"].strip()
     if e2_filter == "type_id_name":
         e2 = (e2_type, e2_id, e2_name)
     elif e2_filter == "type_id":
@@ -152,27 +149,33 @@ def run_rel():
         e2 = (e2_type, e2_name)
     else:
         assert False
+    logger.info(f"[Entity B] key={e2_filter} value={e2}")
+
+    # input: pmid
+    query_pmid = data["query_pmid"].strip()
+    logger.info(f"[PMID] value={query_pmid}")
 
     # input: query
     query_filter = data["query_filter"]
     query_rels = int(data["query_rels"])
-    query_pmid = data["query_pmid"].strip()
-
-    logger.info(f"[Entity A] key={e1_filter} value={e1}")
-    logger.info(f"[Entity B] key={e2_filter} value={e2}")
-    logger.info(f"[Query] filter={query_filter} #rel={query_rels:,} pmid={query_pmid}")
+    logger.info(f"[Query] filter={query_filter} #rel={query_rels:,}")
 
     # query rel ids
     if eid_list:
         rel_id_list = eid_list
-    elif query_filter == "PMID":
+    elif query_filter == "P":
         rel_id_list = kb.get_evidence_ids_by_pmid(query_pmid)
-    elif query_filter == "AB":
-        rel_id_list = kb.get_evidence_ids_by_pair((e1, e2), key=(e1_filter, e2_filter))
     elif query_filter == "A":
         rel_id_list = kb.get_evidence_ids_by_entity(e1, key=e1_filter)
     elif query_filter == "B":
         rel_id_list = kb.get_evidence_ids_by_entity(e2, key=e2_filter)
+    elif query_filter == "AB":
+        rel_id_list = kb.get_evidence_ids_by_pair((e1, e2), key=(e1_filter, e2_filter))
+    elif query_filter == "ABP":
+        ab_list = kb.get_evidence_ids_by_pair((e1, e2), key=(e1_filter, e2_filter))
+        p_list = kb.get_evidence_ids_by_pmid(query_pmid)
+        rel_id_list = sorted(set(ab_list) & set(p_list))
+        del ab_list, p_list
     else:
         assert False
     rel_ids = len(rel_id_list)
@@ -232,33 +235,57 @@ def run_rel():
     if eid_list:
         summary_query = "X"
         summary_target = None
-    elif query_filter == "PMID":
+    elif query_filter == "P":
         summary_query = "P"
         summary_target = query_pmid
-    elif query_filter == "AB":
-        summary_query = "AB"
-        summary_target = (e1_filter, (e1_type, e1_id, e1_name), e2_filter, (e2_type, e2_id, e2_name))
     elif query_filter == "A":
         summary_query = "A"
         summary_target = (e1_filter, (e1_type, e1_id, e1_name))
     elif query_filter == "B":
         summary_query = "A"
         summary_target = (e2_filter, (e2_type, e2_id, e2_name))
+    elif query_filter == "AB":
+        summary_query = "AB"
+        summary_target = (e1_filter, (e1_type, e1_id, e1_name), e2_filter, (e2_type, e2_id, e2_name))
+    elif query_filter == "ABP":
+        summary_query = "ABP"
+        summary_target = (e1_filter, (e1_type, e1_id, e1_name), e2_filter, (e2_type, e2_id, e2_name), query_pmid)
     else:
         assert False
 
-    # result = get_summary(kb, summary_evidence_id_list, summary_target, summary_query)
     try:
-        result = get_summary(kb, summary_evidence_id_list, summary_target, summary_query)
+        summary_text, summary_html = get_summary(kb, summary_evidence_id_list, summary_target, summary_query)
+        assert isinstance(summary_text, str)
+        assert summary_text
+        assert isinstance(summary_html, str)
+        assert summary_html
     except Exception:
         traceback.print_exc()
-        result = "No summary. (Exception caught)"
-    if not isinstance(result, str) or not result:
-        logger.info(result)
-        result = "No summary."
-    result = '<div style="font-size: 16px; line-height: 200%">' \
-             + html.escape(result) \
-             + "</div><br /><br />"
+        summary_text = "No summary (exception caught)."
+        summary_html = html.escape(summary_text)
+
+    result = \
+        "<div style='font-size: 15px; line-height: 200%'>" \
+        "<span style='font-size: 17px'> " \
+        "Summary" \
+        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+        "<span style='font-size: 13px; font-weight:bold'> " \
+        "&mdash; target query" \
+        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+        "<span style='font-size: 13px; color:#e05e2b; font-weight:bold'>" \
+        "&mdash; selected related mentions" \
+        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+        "<mark style='font-size: 13px; background-color:#bcf7a4'; font-weight:bold'>" \
+        " &mdash; odds_ratio " \
+        "</mark>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+        "<mark style='font-size: 13px; background-color:#c4d2f5'; font-weight:bold'>" \
+        " &mdash; rbert_cre " \
+        "</mark>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+        "<mark style='font-size: 13px; background-color:#f7d2dc'; font-weight:bold'>" \
+        " &mdash; spacy_ore / openie_ore " \
+        "</mark>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br />" \
+        + summary_html \
+        + "</div><br /><br />"
 
     # create table html
     annotator_table_html = f"<table><tr>"
