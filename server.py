@@ -254,16 +254,38 @@ def run_rel():
         assert False
 
     try:
-        result = get_summary(kb, summary_evidence_id_list, summary_target, summary_query)
+        summary_text, summary_html = get_summary(kb, summary_evidence_id_list, summary_target, summary_query)
+        assert isinstance(summary_text, str)
+        assert summary_text
+        assert isinstance(summary_html, str)
+        assert summary_html
     except Exception:
         traceback.print_exc()
-        result = "No summary. (Exception caught)"
-    if not isinstance(result, str) or not result:
-        logger.info(result)
-        result = "No summary."
-    result = '<div style="font-size: 16px; line-height: 200%">' \
-             + html.escape(result) \
-             + "</div><br /><br />"
+        summary_text = "No summary (exception caught)."
+        summary_html = html.escape(summary_text)
+
+    result = \
+        "<div style='font-size: 15px; line-height: 200%'>" \
+        "<span style='font-size: 17px'> " \
+        "Summary" \
+        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+        "<span style='font-size: 13px; font-weight:bold'> " \
+        "&mdash; target query" \
+        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+        "<span style='font-size: 13px; color:#e05e2b; font-weight:bold'>" \
+        "&mdash; selected related mentions" \
+        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+        "<mark style='font-size: 13px; background-color:#bcf7a4'; font-weight:bold'>" \
+        " &mdash; odds_ratio " \
+        "</mark>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+        "<mark style='font-size: 13px; background-color:#c4d2f5'; font-weight:bold'>" \
+        " &mdash; rbert_cre " \
+        "</mark>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+        "<mark style='font-size: 13px; background-color:#f7d2dc'; font-weight:bold'>" \
+        " &mdash; spacy_ore / openie_ore " \
+        "</mark>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br />" \
+        + summary_html \
+        + "</div><br /><br />"
 
     # create table html
     annotator_table_html = f"<table><tr>"
