@@ -98,9 +98,12 @@ def gen_summary_input (detailed_evidence):
                 if len(ore_sorted)<2:
                     e=d_list_sorted[i][1][0]
                     s = ' '.join(e["annotation"])
-                    if s!=string_list[i-1]:
+                    if len(ore_sorted)==0:
                         ore_sorted.append(e)
                         string_list.append(s)
+                    else:
+                        if s!=string_list[i-1]:
+                            ore_sorted.append(e)
                 else:
                     break
     return odds_sorted, cre_sorted, ore_sorted
@@ -912,6 +915,9 @@ def gen_summary_by_pmid_pair(kb,evidence_id_list,target):
     odds_list = [""]
     triplet_list = [""]
     rbert_list = [""]
+    odds_list2 = [""]
+    triplet_list2 = [""]
+    rbert_list2 = [""]
     for evidence_id in evidence_id_list:
         _head, _tail, _annotation_id, _pmid, sentence_id = kb.get_evidence_by_id(
         evidence_id, return_annotation=False, return_sentence=False)
