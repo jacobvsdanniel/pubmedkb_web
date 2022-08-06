@@ -265,25 +265,25 @@ def run_rel():
         summary_html = html.escape(summary_text)
 
     result = \
-        "<div style='font-size: 15px; line-height: 200%'>" \
+        "<div style='font-size: 15px; color: #131523; line-height: 200%'>" \
         "<span style='font-size: 17px'> " \
         "Summary" \
         "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
         "<span style='font-size: 13px; font-weight:bold'> " \
         "&mdash; target query" \
         "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
-        "<span style='font-size: 13px; color:#e05e2b; font-weight:bold'>" \
+        "<span style='font-size: 13px; font-weight:bold; color: #f99600'>" \
         "&mdash; selected related mentions" \
         "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
-        "<mark style='font-size: 13px; background-color:#bcf7a4'; font-weight:bold'>" \
+        "<span style='font-size: 13px; font-weight:bold; color: #21d59b; background-color: #62e0b84d'>" \
         " &mdash; odds_ratio " \
-        "</mark>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
-        "<mark style='font-size: 13px; background-color:#c4d2f5'; font-weight:bold'>" \
+        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+        "<span style='font-size: 13px; font-weight:bold; color: #0058ff; background-color: #5f96ff4d'>" \
         " &mdash; rbert_cre " \
-        "</mark>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
-        "<mark style='font-size: 13px; background-color:#f7d2dc'; font-weight:bold'>" \
+        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+        "<span style='font-size: 13px; font-weight:bold; color: #ff8389; background-color: #ff83894d'>" \
         " &mdash; spacy_ore / openie_ore " \
-        "</mark>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br />" \
+        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br />" \
         + summary_html \
         + "</div><br /><br />"
 
