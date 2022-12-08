@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>NEN Query</title>
+    <title>Variant Query</title>
     <style>
         table {
             font-family: Helvetica, sans-serif;
@@ -37,28 +37,12 @@
     pubmedKB API:&nbsp;&nbsp;<a href="nen">NEN</a>&nbsp;&nbsp;<a href="var">VAR</a>&nbsp;&nbsp;<a href="rel">REL</a>
 </div>
 <br />
-<h1 style="font-family: Helvetica, sans-serif;">NEN Query</h1>
+<h1 style="font-family: Helvetica, sans-serif;">Variant Query</h1>
 <br />
-
-<label>Case sensitive (Y/N):</label>
-<textarea id="ta_case_sensitive" style="font-size: 14px; width: 100px; height: 18px;">N</textarea>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-<label>Max length difference:</label>
-<textarea id="ta_max_length_diff" style="font-size: 14px; width: 100px; height: 18px;">1</textarea>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-<label>Min similarity:</label>
-<textarea id="ta_min_similarity" style="font-size: 14px; width: 100px; height: 18px;">0.85</textarea>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-<label>Max #name per query:</label>
-<textarea id="ta_max_names" style="font-size: 14px; width: 100px; height: 18px;">10</textarea>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-<label>Max #alias per ID:</label>
-<textarea id="ta_max_aliases" style="font-size: 14px; width: 100px; height: 18px;">5</textarea>
-<br /><br /><br />
 
 <label style="font-size: 22px;">Query:</label>
 &nbsp;&nbsp;
-<textarea id="ta_query" style="font-size: 22px; width: 500px; height: 26px;">V600E</textarea>
+<textarea id="ta_query" style="font-size: 22px; width: 500px; height: 26px;">val600g</textarea>
 <br /><br />
 <button type="submit" class="input_submit" style="font-size: 18px; width: 100px; height: 30px;" onClick="run_query()">show</button>
 <br />
@@ -68,7 +52,7 @@
 <div style="font-size: 30px; font-family: Arial, Helvetica, sans-serif;">Result<br /><br /></div>
 <div id="div_result" style="width: 1300px; font-size: 14px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif;">None</div>
 
-<script type="text/javascript" src="{{ url_for('static', filename='nen.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='var.js') }}"></script>
 
 </body>
 

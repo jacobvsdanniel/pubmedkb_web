@@ -5,11 +5,14 @@ import json
 import difflib
 import logging
 import argparse
+import urllib.parse
 from collections import defaultdict
+
+import requests
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    format="%(asctime)s - %(name)s - %(message)s",
     datefmt="%Y/%m/%d %H:%M:%S",
     level=logging.INFO,
 )
@@ -72,6 +75,81 @@ def read_csv(file, dialect, write_log=True):
     return row_list
 
 
+class VariantQuery:
+    def __init__(self, data_file):
+        self.type_id_name_frequency = defaultdict(lambda: defaultdict(lambda: {}))
+
+        type_id_name_frequency_list = read_csv(data_file, "csv")
+        type_set = {"ProteinMutation", "DNAMutation", "SNP", "CopyNumberVariant"}
+        id_system_set = {"HGVS", "RS#"}
+
+        for _type, _id, name, frequency in type_id_name_frequency_list[1:]:
+            if _type not in type_set:
+                continue
+
+            i = _id.find(":")
+            id_system = _id[:i]
+            if id_system not in id_system_set:
+                continue
+
+            self.type_id_name_frequency[_type][_id][name] = int(frequency)
+        return
+
+    def get_nen(self, query):
+        query_quote = urllib.parse.quote(query)
+        response = requests.get(
+            "https://www.ncbi.nlm.nih.gov/research/litvar2-api/variant/autocomplete/",
+            params={"query": query_quote},
+        )
+        result_list = response.json()
+        extraction_list = []
+
+        for result in result_list:
+            # logger.info(f"raw result: {result}")
+
+            _id = []
+            if "rsid" in result:
+                _id.append("RS#:" + result["rsid"][2:])
+            if "hgvs" in result:
+                _id.append("HGVS:" + result["hgvs"])
+
+            name = [result["name"]]
+            if "match" in result:
+                match = result["match"]
+                prefix = "<m>"
+                suffix = "</m>"
+                i = match.find(prefix) + len(prefix)
+                j = match.find(suffix, i)
+                match = match[i:j]
+                if match != name[0]:
+                    name.append(match)
+
+            gene = result.get("gene", [])
+
+            extraction = (_id, name, gene)
+            extraction_list.append(extraction)
+            # logger.info(f"extracted result: {extraction}")
+
+        return extraction_list
+
+    def get_nen_in_kb(self, id_list, name_list):
+        type_id_name_frequency = []
+
+        for _type, id_name_frequency in self.type_id_name_frequency.items():
+            for _id in id_list:
+                if _id not in id_name_frequency:
+                    continue
+                for name in name_list:
+                    if name not in id_name_frequency[_id]:
+                        continue
+                    frequency = id_name_frequency[_id][name]
+                    type_id_name_frequency.append((_type, _id, name, frequency))
+
+        type_id_name_frequency = sorted(type_id_name_frequency, key=lambda tidf: tidf[3], reverse=True)
+
+        return type_id_name_frequency
+
+
 class NEN:
     def __init__(self, data_file):
         self.type_id_name_frequency = defaultdict(lambda: defaultdict(lambda: {}))
@@ -83,6 +161,7 @@ class NEN:
             self.type_id_name_frequency[_type][_id][name] = int(frequency)
             self.name_type_id[name][_type].append(_id)
             self.length_name[len(name)].add(name)
+        return
 
     def get_names_by_query(self, query, case_sensitive=False, max_length_diff=1, min_similarity=0.85, max_names=20):
         length = len(query)
@@ -286,6 +365,21 @@ class DiskKB:
         return head, tail, annotation, pmid, sentence
 
 
+def test_vq(kb_dir):
+    nen_file = os.path.join(kb_dir, "type_id_name_frequency.csv")
+    vq = VariantQuery(nen_file)
+
+    extraction_list = vq.get_nen("val600g")
+
+    for id_list, name_list, gene_list in extraction_list:
+        logger.info(f"{id_list} {name_list}")
+
+        type_id_name_frequency_list = vq.get_nen_in_kb(id_list, name_list)
+        for _type, _id, name, frequency in type_id_name_frequency_list:
+            logger.info(f"-> in KB: {_type} {_id} {name} {frequency}")
+    return
+
+
 def test_nen(kb_dir):
     kb = KB(kb_dir)
     kb.load_nen()
@@ -357,11 +451,12 @@ def test_kb(kb_dir):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--kb_dir", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/kb_1g_data")
+    parser.add_argument("--kb_dir", type=str, default="pubmedKB-PTC/1_319_disk")
     arg = parser.parse_args()
 
+    test_vq(arg.kb_dir)
     # test_nen(arg.kb_dir)
-    test_kb(arg.kb_dir)
+    # test_kb(arg.kb_dir)
     return
 
 
