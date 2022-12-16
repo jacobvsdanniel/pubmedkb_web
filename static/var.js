@@ -14,3 +14,10 @@ function run_query(){
         document.getElementById("div_status").innerHTML = "Ready";
     })
 }
+
+function get_json(){
+    query = document.getElementById("ta_query").value;
+    query = encodeURI(query)
+    url = `./query_var?query=${query}`
+    window.open(url, "_blank");
+}

@@ -41,10 +41,10 @@
 <br />
 
 <label>Case sensitive (Y/N):</label>
-<textarea id="ta_case_sensitive" style="font-size: 14px; width: 100px; height: 18px;">N</textarea>
+<textarea id="ta_case_sensitive" style="font-size: 14px; width: 100px; height: 18px;">Y</textarea>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <label>Max length difference:</label>
-<textarea id="ta_max_length_diff" style="font-size: 14px; width: 100px; height: 18px;">1</textarea>
+<textarea id="ta_max_length_diff" style="font-size: 14px; width: 100px; height: 18px;">0</textarea>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <label>Min similarity:</label>
 <textarea id="ta_min_similarity" style="font-size: 14px; width: 100px; height: 18px;">0.85</textarea>
@@ -60,7 +60,9 @@
 &nbsp;&nbsp;
 <textarea id="ta_query" style="font-size: 22px; width: 500px; height: 26px;">V600E</textarea>
 <br /><br />
-<button type="submit" class="input_submit" style="font-size: 18px; width: 100px; height: 30px;" onClick="run_query()">show</button>
+<button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="run_query()">show table</button>
+&nbsp;
+<button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="get_json()">get json</button>
 <br />
 <div id="div_status">Ready</div>
 <br /><br />

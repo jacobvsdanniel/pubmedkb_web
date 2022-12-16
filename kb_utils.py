@@ -75,79 +75,39 @@ def read_csv(file, dialect, write_log=True):
     return row_list
 
 
-class VariantQuery:
-    def __init__(self, data_file):
-        self.type_id_name_frequency = defaultdict(lambda: defaultdict(lambda: {}))
+def query_variant(query):
+    query_quote = urllib.parse.quote(query)
+    response = requests.get(
+        "https://www.ncbi.nlm.nih.gov/research/litvar2-api/variant/autocomplete/",
+        params={"query": query_quote},
+    )
+    result_list = response.json()
+    variant_list = []
 
-        type_id_name_frequency_list = read_csv(data_file, "csv")
-        type_set = {"ProteinMutation", "DNAMutation", "SNP", "CopyNumberVariant"}
-        id_system_set = {"HGVS", "RS#"}
+    for result in result_list:
+        id_list = []
+        if "rsid" in result:
+            id_list.append("RS#:" + result["rsid"][2:])
+        if "hgvs" in result:
+            id_list.append("HGVS:" + result["hgvs"])
 
-        for _type, _id, name, frequency in type_id_name_frequency_list[1:]:
-            if _type not in type_set:
-                continue
+        name_list = [result["name"]]
+        if "match" in result:
+            match = result["match"]
+            prefix = "<m>"
+            suffix = "</m>"
+            i = match.find(prefix) + len(prefix)
+            j = match.find(suffix, i)
+            match = match[i:j]
+            if match != name_list[0]:
+                name_list.append(match)
 
-            i = _id.find(":")
-            id_system = _id[:i]
-            if id_system not in id_system_set:
-                continue
+        gene_list = result.get("gene", [])
 
-            self.type_id_name_frequency[_type][_id][name] = int(frequency)
-        return
+        variant = (id_list, name_list, gene_list)
+        variant_list.append(variant)
 
-    def get_nen(self, query):
-        query_quote = urllib.parse.quote(query)
-        response = requests.get(
-            "https://www.ncbi.nlm.nih.gov/research/litvar2-api/variant/autocomplete/",
-            params={"query": query_quote},
-        )
-        result_list = response.json()
-        extraction_list = []
-
-        for result in result_list:
-            # logger.info(f"raw result: {result}")
-
-            _id = []
-            if "rsid" in result:
-                _id.append("RS#:" + result["rsid"][2:])
-            if "hgvs" in result:
-                _id.append("HGVS:" + result["hgvs"])
-
-            name = [result["name"]]
-            if "match" in result:
-                match = result["match"]
-                prefix = "<m>"
-                suffix = "</m>"
-                i = match.find(prefix) + len(prefix)
-                j = match.find(suffix, i)
-                match = match[i:j]
-                if match != name[0]:
-                    name.append(match)
-
-            gene = result.get("gene", [])
-
-            extraction = (_id, name, gene)
-            extraction_list.append(extraction)
-            # logger.info(f"extracted result: {extraction}")
-
-        return extraction_list
-
-    def get_nen_in_kb(self, id_list, name_list):
-        type_id_name_frequency = []
-
-        for _type, id_name_frequency in self.type_id_name_frequency.items():
-            for _id in id_list:
-                if _id not in id_name_frequency:
-                    continue
-                for name in name_list:
-                    if name not in id_name_frequency[_id]:
-                        continue
-                    frequency = id_name_frequency[_id][name]
-                    type_id_name_frequency.append((_type, _id, name, frequency))
-
-        type_id_name_frequency = sorted(type_id_name_frequency, key=lambda tidf: tidf[3], reverse=True)
-
-        return type_id_name_frequency
+    return variant_list
 
 
 class NEN:
@@ -155,6 +115,7 @@ class NEN:
         self.type_id_name_frequency = defaultdict(lambda: defaultdict(lambda: {}))
         self.name_type_id = defaultdict(lambda: defaultdict(lambda: []))
         self.length_name = defaultdict(lambda: set())
+        self.variant_type_list = ["ProteinMutation", "DNAMutation", "SNP", "CopyNumberVariant"]
 
         type_id_name_frequency_list = read_csv(data_file, "csv")
         for _type, _id, name, frequency in type_id_name_frequency_list[1:]:
@@ -207,21 +168,26 @@ class NEN:
         alias_frequency_list = alias_frequency_list[:max_aliases]
         return alias_frequency_list
 
+    def get_variant_in_kb(self, id_list, name_list):
+        type_id_name_frequency = []
 
-class KB:
+        for _type in self.variant_type_list:
+            for _id in id_list:
+                for name in name_list:
+                    frequency = self.type_id_name_frequency.get(_type, {}).get(_id, {}).get(name, None)
+                    if frequency is not None:
+                        type_id_name_frequency.append((_type, _id, name, frequency))
+
+        type_id_name_frequency = sorted(type_id_name_frequency, key=lambda tidf: tidf[3], reverse=True)
+        return type_id_name_frequency
+
+
+class KBBackup:
     def __init__(self, data_dir):
         self.data_dir = data_dir
         self.nen = None
-        self.data = {
-            "sentence": None,
-            "annotation": None,
-            "evidence": None,
-        }
-        self.index = {
-            "pmid": None,
-            "type_id": None,
-            "type_name": None,
-        }
+        self.data = {}
+        self.index = {}
         return
 
     def load_nen(self):
@@ -285,20 +251,12 @@ class KB:
         return head, tail, annotation, pmid, sentence
 
 
-class DiskKB:
+class DiskKBBackup:
     def __init__(self, data_dir):
         self.data_dir = data_dir
         self.nen = None
-        self.data = {
-            "sentence": None,
-            "annotation": None,
-            "evidence": None,
-        }
-        self.index = {
-            "pmid": None,
-            "type_id": None,
-            "type_name": None,
-        }
+        self.data = {}
+        self.index = {}
         return
 
     def load_nen(self):
@@ -365,25 +323,106 @@ class DiskKB:
         return head, tail, annotation, pmid, sentence
 
 
-def test_vq(kb_dir):
-    nen_file = os.path.join(kb_dir, "type_id_name_frequency.csv")
-    vq = VariantQuery(nen_file)
+class KB:
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self.nen = None
+        self.data = {}
+        self.key = {}
+        self.value = {}
+        return
 
-    extraction_list = vq.get_nen("val600g")
+    def load_nen(self):
+        nen_file = os.path.join(self.data_dir, "type_id_name_frequency.csv")
+        self.nen = NEN(nen_file)
+        return
 
-    for id_list, name_list, gene_list in extraction_list:
-        logger.info(f"{id_list} {name_list}")
+    def load_data(self, data_type=("evidence", "annotation", "sentence")):
+        for name in data_type:
+            file = os.path.join(self.data_dir, f"{name}.jsonl")
+            self.data[name] = open(file, "r", encoding="utf8")
+        return
 
-        type_id_name_frequency_list = vq.get_nen_in_kb(id_list, name_list)
-        for _type, _id, name, frequency in type_id_name_frequency_list:
-            logger.info(f"-> in KB: {_type} {_id} {name} {frequency}")
-    return
+    def load_index(self, index_type=("pmid", "type_id", "type_name")):
+        for name in index_type:
+            value_file = os.path.join(self.data_dir, f"{name}_value.jsonl")
+            self.value[name] = open(value_file, "r", encoding="utf8")
+
+            key_file = os.path.join(self.data_dir, f"{name}_key.jsonl")
+            key_list = read_json(key_file, is_jsonl=True)
+            if name == "pmid":
+                self.key[name] = {key: value_offset for key, value_offset in key_list}
+            else:
+                self.key[name] = {tuple(key): value_offset for key, value_offset in key_list}
+        return
+
+    def get_evidence_ids_by_key(self, key_type, key):
+        value_offset = self.key[key_type].get(key, None)
+        if value_offset is None:
+            return []
+        self.value[key_type].seek(value_offset)
+        id_list_string = self.value[key_type].readline()[:-1]
+        id_list = json.loads(id_list_string)
+        return id_list
+
+    def get_evidence_ids_by_pmid(self, pmid):
+        assert isinstance(pmid, str)
+        id_list = self.get_evidence_ids_by_key("pmid", pmid)
+        return id_list
+
+    def get_evidence_ids_by_entity(self, entity, key="type_id_name"):
+        assert isinstance(entity, tuple)
+        assert len(entity) == len(key.split("_"))
+        if key in ["type_id", "type_name"]:
+            id_list = self.get_evidence_ids_by_key(key, entity)
+        elif key == "type_id_name":
+            _type, _id, name = entity
+            id_list_1 = self.get_evidence_ids_by_key("type_id", (_type, _id))
+            id_list_2 = self.get_evidence_ids_by_key("type_name", (_type, name))
+            id_list = sorted(set(id_list_1) & set(id_list_2))
+        else:
+            assert False
+        return id_list
+
+    def get_evidence_ids_by_pair(self, pair, key=("type_id_name", "type_id_name")):
+        head_id_list = self.get_evidence_ids_by_entity(pair[0], key[0])
+        tail_id_list = self.get_evidence_ids_by_entity(pair[1], key[1])
+        id_list = sorted(set(head_id_list) & set(tail_id_list))
+        return id_list
+
+    def get_evidence_by_id(self, _id, return_annotation=True, return_sentence=True):
+        self.data["evidence"].seek(_id)
+        evidence = self.data["evidence"].readline()[:-1]
+        head, tail, annotation, pmid, sentence = json.loads(evidence)
+
+        if return_annotation:
+            self.data["annotation"].seek(annotation)
+            annotation = self.data["annotation"].readline()[:-1]
+            annotation = json.loads(annotation)
+
+        if return_sentence:
+            self.data["sentence"].seek(sentence)
+            sentence = self.data["sentence"].readline()[:-1]
+            sentence = json.loads(sentence)
+
+        return head, tail, annotation, pmid, sentence
 
 
 def test_nen(kb_dir):
     kb = KB(kb_dir)
     kb.load_nen()
 
+    # variant query
+    variant_list = query_variant("val600g")
+
+    for id_list, name_list, gene_list in variant_list:
+        logger.info(f"{id_list} {name_list}")
+
+        type_id_name_frequency_list = kb.nen.get_variant_in_kb(id_list, name_list)
+        for _type, _id, name, frequency in type_id_name_frequency_list:
+            logger.info(f"-> in KB: {_type} {_id} {name} {frequency}")
+
+    # other query
     query = "Metformin"
     logger.info(f"query: {query}")
 
@@ -392,7 +431,6 @@ def test_nen(kb_dir):
     )
     names = len(name_similarity_list)
     logger.info(f"{names:,} names")
-    input("YOLO")
 
     for name, similarity in name_similarity_list:
         logger.info(f"name: {name}, similarity: {similarity}")
@@ -404,7 +442,6 @@ def test_nen(kb_dir):
             alias_frequency_list = kb.nen.get_aliases_by_id(_type, _id, max_aliases=5)
             logger.info(f"({_type}, {_id}, {name}, {id_frequency}): alias_list={alias_frequency_list}")
 
-        input("YOLO")
     return
 
 
@@ -420,10 +457,8 @@ def test_kb(kb_dir):
     evidence_list = [kb.get_evidence_by_id(_id) for _id in evidence_list]
     evidences = len(evidence_list)
     logger.info(f"{evidences:,} evidences")
-    input("YOLO")
     for evidence in evidence_list:
         logger.info(evidence)
-    input("YOLO")
 
     head = ("Chemical", "MESH:D001639")
     tail = ("Disease", "MESH:D000138")
@@ -431,10 +466,8 @@ def test_kb(kb_dir):
     evidence_list = [kb.get_evidence_by_id(_id) for _id in evidence_list]
     evidences = len(evidence_list)
     logger.info(f"{evidences:,} evidences")
-    input("YOLO")
     for evidence in evidence_list:
         logger.info(evidence)
-    input("YOLO")
 
     head = ("Chemical", "bicarbonate")
     tail = ("Disease", "metabolic acidosis")
@@ -442,10 +475,8 @@ def test_kb(kb_dir):
     evidence_list = [kb.get_evidence_by_id(_id) for _id in evidence_list]
     evidences = len(evidence_list)
     logger.info(f"{evidences:,} evidences")
-    input("YOLO")
     for evidence in evidence_list:
         logger.info(evidence)
-    input("YOLO")
     return
 
 
@@ -453,10 +484,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--kb_dir", type=str, default="pubmedKB-PTC/1_319_disk")
     arg = parser.parse_args()
+    for key, value in vars(arg).items():
+        if value is not None:
+            logger.info(f"[{key}] {value}")
 
-    test_vq(arg.kb_dir)
-    # test_nen(arg.kb_dir)
-    # test_kb(arg.kb_dir)
+    test_nen(arg.kb_dir)
+    test_kb(arg.kb_dir)
     return
 
 

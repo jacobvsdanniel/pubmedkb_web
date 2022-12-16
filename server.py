@@ -1,4 +1,3 @@
-import os
 import csv
 import sys
 import html
@@ -9,7 +8,7 @@ import traceback
 
 from flask import Flask, render_template, request
 
-from kb_utils import VariantQuery, KB, DiskKB
+from kb_utils import query_variant, KB
 from summary_utils import get_summary
 
 app = Flask(__name__)
@@ -27,9 +26,8 @@ csv.register_dialect(
     "tsv", delimiter="\t", quoting=csv.QUOTE_NONE, quotechar=None, doublequote=False,
     escapechar=None, lineterminator="\n", skipinitialspace=False,
 )
-vq = None
-kb = None
-cokb = None
+kb = KB(None)
+kb_type = None
 show_eid, eid_list = False, []
 
 
@@ -129,13 +127,99 @@ def run_nen():
     return json.dumps(response)
 
 
+@app.route("/query_nen")
+def query_nen():
+    response = {}
+
+    # url argument
+    query = request.args.get("query")
+    case_sensitive = request.args.get("case_sensitive")
+    max_length_diff = request.args.get("max_length_diff")
+    min_similarity = request.args.get("min_similarity")
+    max_names = request.args.get("max_names")
+    max_aliases = request.args.get("max_aliases")
+
+    response["url_argument"] = {
+        "query": query,
+        "case_sensitive": case_sensitive,
+        "max_length_diff": max_length_diff,
+        "min_similarity": min_similarity,
+        "max_names": max_names,
+        "max_aliases": max_aliases,
+    }
+
+    query = query.strip()
+    case_sensitive = case_sensitive == "Y"
+    max_length_diff = int(max_length_diff)
+    min_similarity = float(min_similarity)
+    max_names = int(max_names)
+    max_aliases = int(max_aliases)
+
+    logger.info(
+        f"query={query}"
+        f" case_sensitive={case_sensitive}"
+        f" max_length_diff={max_length_diff}"
+        f" min_similarity_ratio={min_similarity}"
+        f" max_aliases={max_aliases}"
+    )
+
+    # name matches
+    name_similarity_list = kb.nen.get_names_by_query(
+        query,
+        case_sensitive=case_sensitive,
+        max_length_diff=max_length_diff,
+        min_similarity=min_similarity,
+        max_names=max_names,
+    )
+    names = len(name_similarity_list)
+    logger.info(f"{names:,} names")
+    response["match_list"] = []
+
+    for name, similarity in name_similarity_list:
+        match = {
+            "name": name,
+            "similarity": similarity,
+            "type_id_alias_list": [],
+        }
+        logger.info(f"name: {name}, similarity: {similarity}")
+
+        # id
+        type_id_frequency_list = kb.nen.get_ids_by_name(name)
+        ids = len(type_id_frequency_list)
+        logger.info(f"ids: {ids}")
+
+        for _type, _id, id_frequency in type_id_frequency_list:
+            type_id_alias = {
+                "type": _type,
+                "id": _id,
+                "type_id_name_frequency": id_frequency,
+            }
+
+            # alias
+            alias_frequency_list = kb.nen.get_aliases_by_id(_type, _id, max_aliases=max_aliases)
+            type_id_alias["alias_list"] = [
+                {
+                    "alias": alias,
+                    "type_id_alias_frequency": alias_frequency,
+                }
+                for alias, alias_frequency in alias_frequency_list
+            ]
+
+            match["type_id_alias_list"].append(type_id_alias)
+            logger.info(f"({_type}, {_id}, {name}, {id_frequency}): alias_list={alias_frequency_list}")
+
+        response["match_list"].append(match)
+
+    return json.dumps(response)
+
+
 @app.route("/run_var", methods=["POST"])
 def run_var():
     data = json.loads(request.data)
     query = data["query"].strip()
     logger.info(f"query={query}")
 
-    extraction_list = vq.get_nen(query)
+    extraction_list = query_variant(query)
     result = ""
 
     for extraction_id, (id_list, name_list, gene_list) in enumerate(extraction_list):
@@ -167,7 +251,7 @@ def run_var():
 
         # tuple table
         result += html.escape("(Type, ID, Name) tuples with relations in current KB:")
-        type_id_name_frequency_list = vq.get_nen_in_kb(id_list, name_list)
+        type_id_name_frequency_list = kb.nen.get_variant_in_kb(id_list, name_list)
         tuples = len(type_id_name_frequency_list)
         logger.info(f"tuples: {tuples}")
         tuple_table_html = \
@@ -198,6 +282,50 @@ def run_var():
         result += tuple_table_html + "<br /><br /><br />"
 
     response = {"result": result}
+    return json.dumps(response)
+
+
+@app.route("/query_var")
+def query_var():
+    response = {}
+
+    # url argument
+    query = request.args.get("query")
+    response["url_argument"] = {
+        "query": query,
+    }
+    query = query.strip()
+    logger.info(f"query={query}")
+
+    # variant matches
+    extraction_list = query_variant(query)
+    response["match_list"] = []
+
+    for extraction_id, (id_list, name_list, gene_list) in enumerate(extraction_list):
+        logger.info(f"{id_list} {name_list} {gene_list}")
+        match = {
+            "attribute": {},
+            "kb_entity_list": [],
+        }
+
+        # attribute
+        for key, value in [("id_list", id_list), ("name_list", name_list), ("gene_list", gene_list)]:
+            match["attribute"][key] = value
+
+        # tuple_in_kb
+        type_id_name_frequency_list = kb.nen.get_variant_in_kb(id_list, name_list)
+        tuples = len(type_id_name_frequency_list)
+        logger.info(f"tuples: {tuples}")
+        for _type, _id, name, frequency in type_id_name_frequency_list:
+            match["kb_entity_list"].append({
+                "type": _type,
+                "id": _id,
+                "name": name,
+                "frequency_in_text": frequency,
+            })
+
+        response["match_list"].append(match)
+
     return json.dumps(response)
 
 
@@ -262,7 +390,11 @@ def run_rel():
     logger.info(f"Total #rel = {rel_ids:,}")
 
     # collect rel by annotator and group evidence by annotation
-    annotator_list = ["odds_ratio", "rbert_cre", "spacy_ore", "openie_ore"]
+    if kb_type == "relation":
+        annotator_list = ["odds_ratio", "rbert_cre", "spacy_ore", "openie_ore"]
+    else:
+        annotator_list = ["co_occurrence"]
+
     annotation_id_to_rel = {}
     annotator_to_rel = {annotator: [] for annotator in annotator_list}
     full_annotator_set = set()
@@ -281,11 +413,12 @@ def run_rel():
                 if len(full_annotator_set) == len(annotator_list):
                     break
                 continue
+
             if annotator == "odds_ratio":
                 annotation = f"OR: {annotation[0]}, CI: {annotation[1]}, p-value: {annotation[2]}"
             elif annotator == "rbert_cre":
                 annotation = f"{annotation[0]}: {annotation[1]}"
-            else:
+            elif annotator in ["spacy_ore", "openie_ore"]:
                 annotation = ", ".join(annotation)
 
             rel = {
@@ -304,68 +437,71 @@ def run_rel():
     del rel_id_list
     del annotation_id_to_rel
 
+    result = ""
+
     # create summary html
-    summary_evidence_id_list = [
-        _id
-        for _annotator, rel_list in annotator_to_rel.items()
-        for rel in rel_list
-        for _id in rel["evidence_id"]
-    ]
+    if kb_type == "relation":
+        summary_evidence_id_list = [
+            _id
+            for _annotator, rel_list in annotator_to_rel.items()
+            for rel in rel_list
+            for _id in rel["evidence_id"]
+        ]
 
-    if eid_list:
-        summary_query = "X"
-        summary_target = None
-    elif query_filter == "P":
-        summary_query = "P"
-        summary_target = query_pmid
-    elif query_filter == "A":
-        summary_query = "A"
-        summary_target = (e1_filter, (e1_type, e1_id, e1_name))
-    elif query_filter == "B":
-        summary_query = "A"
-        summary_target = (e2_filter, (e2_type, e2_id, e2_name))
-    elif query_filter == "AB":
-        summary_query = "AB"
-        summary_target = (e1_filter, (e1_type, e1_id, e1_name), e2_filter, (e2_type, e2_id, e2_name))
-    elif query_filter == "ABP":
-        summary_query = "ABP"
-        summary_target = (e1_filter, (e1_type, e1_id, e1_name), e2_filter, (e2_type, e2_id, e2_name), query_pmid)
-    else:
-        assert False
+        if eid_list:
+            summary_query = "X"
+            summary_target = None
+        elif query_filter == "P":
+            summary_query = "P"
+            summary_target = query_pmid
+        elif query_filter == "A":
+            summary_query = "A"
+            summary_target = (e1_filter, (e1_type, e1_id, e1_name))
+        elif query_filter == "B":
+            summary_query = "A"
+            summary_target = (e2_filter, (e2_type, e2_id, e2_name))
+        elif query_filter == "AB":
+            summary_query = "AB"
+            summary_target = (e1_filter, (e1_type, e1_id, e1_name), e2_filter, (e2_type, e2_id, e2_name))
+        elif query_filter == "ABP":
+            summary_query = "ABP"
+            summary_target = (e1_filter, (e1_type, e1_id, e1_name), e2_filter, (e2_type, e2_id, e2_name), query_pmid)
+        else:
+            assert False
 
-    try:
-        summary_text, summary_html = get_summary(kb, summary_evidence_id_list, summary_target, summary_query)
-        assert isinstance(summary_text, str)
-        assert summary_text
-        assert isinstance(summary_html, str)
-        assert summary_html
-    except Exception:
-        traceback.print_exc()
-        summary_text = "No summary (exception caught)."
-        summary_html = html.escape(summary_text)
+        try:
+            summary_text, summary_html = get_summary(kb, summary_evidence_id_list, summary_target, summary_query)
+            assert isinstance(summary_text, str)
+            assert summary_text
+            assert isinstance(summary_html, str)
+            assert summary_html
+        except Exception:
+            traceback.print_exc()
+            summary_text = "No summary (exception caught)."
+            summary_html = html.escape(summary_text)
 
-    result = \
-        "<div style='font-size: 15px; color: #131523; line-height: 200%'>" \
-        "<span style='font-size: 17px'> " \
-        "Summary" \
-        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
-        "<span style='font-size: 13px; font-weight:bold'> " \
-        "&mdash; target query" \
-        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
-        "<span style='font-size: 13px; font-weight:bold; color: #f99600'>" \
-        "&mdash; selected related mentions" \
-        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
-        "<span style='font-size: 13px; font-weight:bold; color: #21d59b; background-color: #62e0b84d'>" \
-        " &mdash; odds_ratio " \
-        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
-        "<span style='font-size: 13px; font-weight:bold; color: #0058ff; background-color: #5f96ff4d'>" \
-        " &mdash; rbert_cre " \
-        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
-        "<span style='font-size: 13px; font-weight:bold; color: #ff8389; background-color: #ff83894d'>" \
-        " &mdash; spacy_ore / openie_ore " \
-        "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br />" \
-        + summary_html \
-        + "</div><br /><br />"
+        result += \
+            "<div style='font-size: 15px; color: #131523; line-height: 200%'>" \
+            "<span style='font-size: 17px'> " \
+            "Summary" \
+            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+            "<span style='font-size: 13px; font-weight:bold'> " \
+            "&mdash; target query" \
+            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+            "<span style='font-size: 13px; font-weight:bold; color: #f99600'>" \
+            "&mdash; selected related mentions" \
+            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+            "<span style='font-size: 13px; font-weight:bold; color: #21d59b; background-color: #62e0b84d'>" \
+            " &mdash; odds_ratio " \
+            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+            "<span style='font-size: 13px; font-weight:bold; color: #0058ff; background-color: #5f96ff4d'>" \
+            " &mdash; rbert_cre " \
+            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+            "<span style='font-size: 13px; font-weight:bold; color: #ff8389; background-color: #ff83894d'>" \
+            " &mdash; spacy_ore / openie_ore " \
+            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br />" \
+            + summary_html \
+            + "</div><br /><br />"
 
     # create table html
     annotator_table_html = f"<table><tr>"
@@ -457,13 +593,31 @@ def run_rel():
     return json.dumps(response)
 
 
-@app.route("/run_cooccur", methods=["POST"])
-def run_cooccur():
-    data = json.loads(request.data)
+@app.route("/query_rel")
+def query_rel():
+    response = {}
+
+    # url argument
+    e1_filter = request.args.get("e1_filter")
+    e1_type = request.args.get("e1_type")
+    e1_id = request.args.get("e1_id")
+    e1_name = request.args.get("e1_name")
+    e2_filter = request.args.get("e2_filter")
+    e2_type = request.args.get("e2_type")
+    e2_id = request.args.get("e2_id")
+    e2_name = request.args.get("e2_name")
+    query_pmid = request.args.get("query_pmid")
+    query_filter = request.args.get("query_filter")
+    query_rels = request.args.get("query_rels")
+
+    response["url_argument"] = {
+        "e1_filter": e1_filter, "e1_type": e1_type, "e1_id": e1_id, "e1_name": e1_name,
+        "e2_filter": e2_filter, "e2_type": e2_type, "e2_id": e2_id, "e2_name": e2_name,
+        "query_pmid": query_pmid, "query_filter": query_filter, "query_rels": query_rels,
+    }
 
     # input: e1
-    e1_filter = data["e1_filter"]
-    e1_type, e1_id, e1_name = data["e1_type"], data["e1_id"].strip(), data["e1_name"].strip()
+    e1_id, e1_name = e1_id.strip(), e1_name.strip()
     if e1_filter == "type_id_name":
         e1 = (e1_type, e1_id, e1_name)
     elif e1_filter == "type_id":
@@ -475,8 +629,7 @@ def run_cooccur():
     logger.info(f"[Entity A] key={e1_filter} value={e1}")
 
     # input: e2
-    e2_filter = data["e2_filter"]
-    e2_type, e2_id, e2_name = data["e2_type"], data["e2_id"].strip(), data["e2_name"].strip()
+    e2_id, e2_name = e2_id.strip(), e2_name.strip()
     if e2_filter == "type_id_name":
         e2 = (e2_type, e2_id, e2_name)
     elif e2_filter == "type_id":
@@ -488,28 +641,27 @@ def run_cooccur():
     logger.info(f"[Entity B] key={e2_filter} value={e2}")
 
     # input: pmid
-    query_pmid = data["query_pmid"].strip()
+    query_pmid = query_pmid.strip()
     logger.info(f"[PMID] value={query_pmid}")
 
     # input: query
-    query_filter = data["query_filter"]
-    query_rels = int(data["query_rels"])
+    query_rels = int(query_rels)
     logger.info(f"[Query] filter={query_filter} #rel={query_rels:,}")
 
     # query rel ids
     if eid_list:
         rel_id_list = eid_list
     elif query_filter == "P":
-        rel_id_list = cokb.get_evidence_ids_by_pmid(query_pmid)
+        rel_id_list = kb.get_evidence_ids_by_pmid(query_pmid)
     elif query_filter == "A":
-        rel_id_list = cokb.get_evidence_ids_by_entity(e1, key=e1_filter)
+        rel_id_list = kb.get_evidence_ids_by_entity(e1, key=e1_filter)
     elif query_filter == "B":
-        rel_id_list = cokb.get_evidence_ids_by_entity(e2, key=e2_filter)
+        rel_id_list = kb.get_evidence_ids_by_entity(e2, key=e2_filter)
     elif query_filter == "AB":
-        rel_id_list = cokb.get_evidence_ids_by_pair((e1, e2), key=(e1_filter, e2_filter))
+        rel_id_list = kb.get_evidence_ids_by_pair((e1, e2), key=(e1_filter, e2_filter))
     elif query_filter == "ABP":
-        ab_list = cokb.get_evidence_ids_by_pair((e1, e2), key=(e1_filter, e2_filter))
-        p_list = cokb.get_evidence_ids_by_pmid(query_pmid)
+        ab_list = kb.get_evidence_ids_by_pair((e1, e2), key=(e1_filter, e2_filter))
+        p_list = kb.get_evidence_ids_by_pmid(query_pmid)
         rel_id_list = sorted(set(ab_list) & set(p_list))
         del ab_list, p_list
     else:
@@ -518,17 +670,21 @@ def run_cooccur():
     logger.info(f"Total #rel = {rel_ids:,}")
 
     # collect rel by annotator and group evidence by annotation
-    annotator_list = ["co_occurrence"]
+    if kb_type == "relation":
+        annotator_list = ["odds_ratio", "rbert_cre", "spacy_ore", "openie_ore"]
+    else:
+        annotator_list = ["co_occurrence"]
+
     annotation_id_to_rel = {}
     annotator_to_rel = {annotator: [] for annotator in annotator_list}
     full_annotator_set = set()
 
     for rel_id in rel_id_list:
-        head, tail, annotation_id, _pmid, _sentence_id = cokb.get_evidence_by_id(
+        head, tail, annotation_id, _pmid, _sentence_id = kb.get_evidence_by_id(
             rel_id, return_annotation=False, return_sentence=False,
         )
         if annotation_id not in annotation_id_to_rel:
-            head, tail, (annotator, annotation), pmid, sentence = cokb.get_evidence_by_id(
+            head, tail, (annotator, annotation), pmid, sentence = kb.get_evidence_by_id(
                 rel_id, return_annotation=True, return_sentence=True,
             )
 
@@ -537,6 +693,13 @@ def run_cooccur():
                 if len(full_annotator_set) == len(annotator_list):
                     break
                 continue
+
+            if annotator == "odds_ratio":
+                annotation = f"OR: {annotation[0]}, CI: {annotation[1]}, p-value: {annotation[2]}"
+            elif annotator == "rbert_cre":
+                annotation = f"{annotation[0]}: {annotation[1]}"
+            elif annotator in ["spacy_ore", "openie_ore"]:
+                annotation = ", ".join(annotation)
 
             rel = {
                 "head_set": {tuple(head)}, "tail_set": {tuple(tail)},
@@ -554,61 +717,85 @@ def run_cooccur():
     del rel_id_list
     del annotation_id_to_rel
 
-    # create summary html
-    summary_evidence_id_list = [
-        _id
-        for _annotator, rel_list in annotator_to_rel.items()
-        for rel in rel_list
-        for _id in rel["evidence_id"]
-    ]
+    # create summary
+    if kb_type == "relation":
+        summary_evidence_id_list = [
+            _id
+            for _annotator, rel_list in annotator_to_rel.items()
+            for rel in rel_list
+            for _id in rel["evidence_id"]
+        ]
 
-    if eid_list:
-        summary_query = "X"
-        summary_target = None
-    elif query_filter == "P":
-        summary_query = "P"
-        summary_target = query_pmid
-    elif query_filter == "A":
-        summary_query = "A"
-        summary_target = (e1_filter, (e1_type, e1_id, e1_name))
-    elif query_filter == "B":
-        summary_query = "A"
-        summary_target = (e2_filter, (e2_type, e2_id, e2_name))
-    elif query_filter == "AB":
-        summary_query = "AB"
-        summary_target = (e1_filter, (e1_type, e1_id, e1_name), e2_filter, (e2_type, e2_id, e2_name))
-    elif query_filter == "ABP":
-        summary_query = "ABP"
-        summary_target = (e1_filter, (e1_type, e1_id, e1_name), e2_filter, (e2_type, e2_id, e2_name), query_pmid)
+        if eid_list:
+            summary_query = "X"
+            summary_target = None
+        elif query_filter == "P":
+            summary_query = "P"
+            summary_target = query_pmid
+        elif query_filter == "A":
+            summary_query = "A"
+            summary_target = (e1_filter, (e1_type, e1_id, e1_name))
+        elif query_filter == "B":
+            summary_query = "A"
+            summary_target = (e2_filter, (e2_type, e2_id, e2_name))
+        elif query_filter == "AB":
+            summary_query = "AB"
+            summary_target = (e1_filter, (e1_type, e1_id, e1_name), e2_filter, (e2_type, e2_id, e2_name))
+        elif query_filter == "ABP":
+            summary_query = "ABP"
+            summary_target = (e1_filter, (e1_type, e1_id, e1_name), e2_filter, (e2_type, e2_id, e2_name), query_pmid)
+        else:
+            assert False
+
+        try:
+            summary_text, summary_html = get_summary(kb, summary_evidence_id_list, summary_target, summary_query)
+            assert isinstance(summary_text, str)
+            assert summary_text
+            assert isinstance(summary_html, str)
+            assert summary_html
+        except Exception:
+            traceback.print_exc()
+            summary_text = "No summary (exception caught)."
+            summary_html = html.escape(summary_text)
+
+        summary_html = \
+            "<div style='font-size: 15px; color: #131523; line-height: 200%'>" \
+            "<span style='font-size: 17px'> " \
+            "Summary" \
+            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+            "<span style='font-size: 13px; font-weight:bold'> " \
+            "&mdash; target query" \
+            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+            "<span style='font-size: 13px; font-weight:bold; color: #f99600'>" \
+            "&mdash; selected related mentions" \
+            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+            "<span style='font-size: 13px; font-weight:bold; color: #21d59b; background-color: #62e0b84d'>" \
+            " &mdash; odds_ratio " \
+            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+            "<span style='font-size: 13px; font-weight:bold; color: #0058ff; background-color: #5f96ff4d'>" \
+            " &mdash; rbert_cre " \
+            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
+            "<span style='font-size: 13px; font-weight:bold; color: #ff8389; background-color: #ff83894d'>" \
+            " &mdash; spacy_ore / openie_ore " \
+            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br />" \
+            + summary_html \
+            + "</div><br /><br />"
+
     else:
-        assert False
+        summary_text = f"No summary for kb_type={kb_type}"
+        summary_html = html.escape(summary_text)
 
-    # create table html
-    annotator_table_html = f"<table><tr>"
-    for annotator in annotator_list:
-        annotator_table_html += f"<th>{annotator}</th>"
-    annotator_table_html += "</tr><tr>"
-    for annotator in annotator_list:
-        rels = len(annotator_to_rel[annotator])
-        logger.info(f"{annotator}: {rels:,} rels")
-        annotator_table_html += f"<td>{rels:,}</td>"
-    annotator_table_html += "</tr><table>"
+    response["summary"] = {
+        "text": summary_text,
+        "html": summary_html,
+    }
 
-    result = f"{annotator_table_html}<br /><br />"
-
-    rel_table_html = \
-        f"<table><tr>" \
-        f'<th style="width:20%">Head</th>' \
-        f'<th style="width:20%">Tail</th>' \
-        f'<th style="width:5%">Annotator</th>' \
-        f'<th style="width:20%">Annotation</th>' \
-        f'<th style="width:5%">PMID</th>' \
-        f'<th style="width:30%">Sentence</th>' \
-        f"</tr>"
+    # create table
+    response["relation"] = {}
 
     for annotator in annotator_list:
+        response["relation"][annotator] = []
         rel_list = annotator_to_rel[annotator]
-        annotator_html = html.escape(annotator)
 
         for rel in rel_list:
             head_type_set, head_id_set, head_name_set = set(), set(), set()
@@ -616,60 +803,50 @@ def run_cooccur():
             annotation = rel["annotation"]
             pmid = rel["pmid"]
             sentence = rel["sentence"]
-            evidence_id = rel["evidence_id"]
 
             for _type, _id, name in rel["head_set"]:
-                head_type_set.add(f"[{_type}]")
+                head_type_set.add(_type)
                 head_id_set.add(_id)
                 head_name_set.add(name)
             for _type, _id, name in rel["tail_set"]:
-                tail_type_set.add(f"[{_type}]")
+                tail_type_set.add(_type)
                 tail_id_set.add(_id)
                 tail_name_set.add(name)
 
-            head_name = "\n".join(sorted(head_name_set)) + "\n"
-            head_type = "\n".join(sorted(head_type_set)) + "\n"
-            head_id = "\n".join(sorted(head_id_set))
+            head_type_list = sorted(head_type_set)
+            head_id_list = sorted(head_id_set)
+            head_name_list = sorted(head_name_set)
 
-            tail_name = "\n".join(sorted(tail_name_set)) + "\n"
-            tail_type = "\n".join(sorted(tail_type_set)) + "\n"
-            tail_id = "\n".join(sorted(tail_id_set))
-
-            head_html = "<b>" + html.escape(head_name) + "</b>" + html.escape(head_type) + "<i>" + html.escape(
-                head_id) + "</i>"
-            tail_html = "<b>" + html.escape(tail_name) + "</b>" + html.escape(tail_type) + "<i>" + html.escape(
-                tail_id) + "</i>"
-            annotation_html = html.escape(annotation)
-            pmid_html = f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{pmid}</a>'
+            tail_type_list = sorted(tail_type_set)
+            tail_id_list = sorted(tail_id_set)
+            tail_name_list = sorted(tail_name_set)
 
             if isinstance(sentence, str):
                 section_type = "ABSTRACT"
                 text_type = "paragraph"
             else:
                 sentence, section_type, text_type = sentence
-            sentence_html = html.escape(sentence)
-            section_type_html = html.escape(f"{section_type} {text_type}")
-            sentence_html = f"{section_type_html}<br /><i>{sentence_html}</i>"
 
-            if show_eid:
-                evidence_id_html = "<br />" + html.escape(" ".join([str(_id) for _id in evidence_id]))
-            else:
-                evidence_id_html = ""
+            response["relation"][annotator].append({
+                "head": {
+                    "type_list": head_type_list,
+                    "id_list": head_id_list,
+                    "name_list": head_name_list,
+                },
+                "tail": {
+                    "type_list": tail_type_list,
+                    "id_list": tail_id_list,
+                    "name_list": tail_name_list,
+                },
+                "annotation": annotation,
+                "source": {
+                    "pmid": pmid,
+                    "section": section_type,
+                    "text": sentence,
+                    "text_parent": text_type,
+                }
+            })
 
-            rel_table_html += \
-                f"<tr>" \
-                f"<td><pre>{head_html}</pre></td>" \
-                f"<td><pre>{tail_html}</pre></td>" \
-                f"<td>{annotator_html}{evidence_id_html}</td>" \
-                f"<td>{annotation_html}</td>" \
-                f"<td>{pmid_html}</td>" \
-                f"<td>{sentence_html}</td>" \
-                f"</tr>"
-
-    rel_table_html += "</table><br /><br /><br /><br /><br /><br /><br /><br /><br /><br />"
-    result += rel_table_html
-
-    response = {"result": result}
     return json.dumps(response)
 
 
@@ -685,11 +862,7 @@ def main():
     # parser.add_argument("--kb_dir", default="pubmedKB-PTC-FT/15823_19778_disk")
     # parser.add_argument("--kb_dir", default="pubmedKB-PTC-FT/1_19778_disk")
 
-    # parser.add_argument("--kb_type", default="memory", choices=["memory", "disk"])
-    parser.add_argument("--kb_type", default="disk", choices=["memory", "disk"])
-
-    # parser.add_argument("--cokb_dir", default="pubmedKB-PTC/1_1_cooccur")
-    parser.add_argument("--cokb_dir", default="pubmedKB-PTC/287_319_cooccur")
+    parser.add_argument("--kb_type", default="relation", choices=["relation", "cooccur"])
 
     parser.add_argument("--eid_list", default="")
     # parser.add_argument(  # pubmedKB-PTC, V600E, MESH:D009369, #rel=20
@@ -711,22 +884,18 @@ def main():
     # parser.add_argument("--show_eid", default="true")
 
     arg = parser.parse_args()
-
-    global vq
-    nen_file = os.path.join(arg.kb_dir, "type_id_name_frequency.csv")
-    vq = VariantQuery(nen_file)
+    for key, value in vars(arg).items():
+        if value is not None:
+            logger.info(f"[{key}] {value}")
 
     global kb
-    kb = KB(arg.kb_dir) if arg.kb_type == "memory" else DiskKB(arg.kb_dir)
+    kb = KB(arg.kb_dir)
     kb.load_nen()
     kb.load_data()
     kb.load_index()
 
-    global cokb
-    cokb = DiskKB(arg.cokb_dir)
-    cokb.load_nen()
-    cokb.load_data()
-    cokb.load_index()
+    global kb_type
+    kb_type = arg.kb_type
 
     global eid_list
     if arg.eid_list:
