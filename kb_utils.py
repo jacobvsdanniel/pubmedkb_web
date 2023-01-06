@@ -110,6 +110,25 @@ def query_variant(query):
     return variant_list
 
 
+def filter_frequency(name_to_frequency, ratio=0):
+    if not name_to_frequency:
+        return name_to_frequency
+
+    result = {}
+    threshold = 0
+
+    for name, frequency in name_to_frequency.items():
+        if not result:
+            result[name] = frequency
+            threshold = frequency * ratio
+            continue
+        if frequency < threshold:
+            break
+        result[name] = frequency
+
+    return result
+
+
 class NEN:
     def __init__(self, data_file):
         self.type_id_name_frequency = defaultdict(lambda: defaultdict(lambda: {}))
@@ -182,145 +201,85 @@ class NEN:
         return type_id_name_frequency
 
 
-class KBBackup:
-    def __init__(self, data_dir):
-        self.data_dir = data_dir
-        self.nen = None
-        self.data = {}
-        self.index = {}
+class V2G:
+    def __init__(self, variant_dir, gene_dir):
+        if variant_dir:
+            self.hgvs_frequency = read_json(os.path.join(variant_dir, "hgvs_frequency.json"))
+            self.rs_frequency = read_json(os.path.join(variant_dir, "rs_frequency.json"))
+            # self.geneid_frequency = read_json(os.path.join(variant_dir, "gene_frequency.json"))
+
+            self.hgvs_rs_frequency = read_json(os.path.join(variant_dir, "hgvs_rs_frequency.json"))
+            self.rs_hgvs_frequency = read_json(os.path.join(variant_dir, "rs_hgvs_frequency.json"))
+
+            self.hgvs_geneid_frequency = read_json(os.path.join(variant_dir, "hgvs_gene_frequency.json"))
+            self.geneid_hgvs_frequency = read_json(os.path.join(variant_dir, "gene_hgvs_frequency.json"))
+
+            self.rs_geneid_frequency = read_json(os.path.join(variant_dir, "rs_gene_frequency.json"))
+            self.geneid_rs_frequency = read_json(os.path.join(variant_dir, "gene_rs_frequency.json"))
+
+        if gene_dir:
+            self.gene_geneid_frequency = read_json(os.path.join(gene_dir, "gene_id_frequency.json"))
+            self.geneid_gene_frequency = read_json(os.path.join(gene_dir, "id_gene_frequency.json"))
         return
 
-    def load_nen(self):
-        nen_file = os.path.join(self.data_dir, "type_id_name_frequency.csv")
-        self.nen = NEN(nen_file)
-        return
-
-    def load_data(self, data_type=("evidence", "annotation", "sentence")):
-        for name in data_type:
-            file = os.path.join(self.data_dir, f"{name}.jsonl")
-            self.data[name] = read_lines(file, line_by_line=True)
-        return
-
-    def load_index(self, index_type=("pmid", "type_id", "type_name")):
-        for name in index_type:
-            file = os.path.join(self.data_dir, f"{name}.jsonl")
-            key_value_list = read_json(file, is_jsonl=True)
-            if name == "pmid":
-                self.index[name] = {key: value for key, value in key_value_list}
-            else:
-                self.index[name] = {tuple(key): value for key, value in key_value_list}
-        return
-
-    def get_evidence_ids_by_pmid(self, pmid):
-        assert isinstance(pmid, str)
-        id_list = self.index["pmid"].get(pmid, [])
-        return id_list
-
-    def get_evidence_ids_by_entity(self, entity, key="type_id_name"):
-        assert isinstance(entity, tuple)
-        assert len(entity) == len(key.split("_"))
-        if key in ["type_id", "type_name"]:
-            id_list = self.index[key].get(entity, [])
-        elif key == "type_id_name":
-            _type, _id, name = entity
-            id_list_1 = self.index["type_id"].get((_type, _id), [])
-            id_list_2 = self.index["type_name"].get((_type, name), [])
-            id_list = sorted(set(id_list_1) & set(id_list_2))
+    def query(self, query):
+        if query.startswith("HGVS:"):
+            hgvs_frequency, rs_frequency, gene_frequency = self.query_hgvs(query)
+        elif query.startswith("RS#:"):
+            hgvs_frequency, rs_frequency, gene_frequency = self.query_rs(query)
         else:
-            assert False
-        return id_list
+            hgvs_frequency, rs_frequency, gene_frequency = self.query_gene(query)
+        return hgvs_frequency, rs_frequency, gene_frequency
 
-    def get_evidence_ids_by_pair(self, pair, key=("type_id_name", "type_id_name")):
-        head_id_list = self.get_evidence_ids_by_entity(pair[0], key[0])
-        tail_id_list = self.get_evidence_ids_by_entity(pair[1], key[1])
-        id_list = sorted(set(head_id_list) & set(tail_id_list))
-        return id_list
+    def query_hgvs(self, hgvs):
+        hgvs_frequency = {hgvs: self.hgvs_frequency.get(hgvs, 0)}
+        rs_frequency = self.hgvs_rs_frequency.get(hgvs, {})
+        gene_frequency = {}
+        for geneid, frequency in self.hgvs_geneid_frequency.get(hgvs, {}).items():
+            for gene, _ in self.geneid_gene_frequency.get(geneid, {}).items():
+                if gene not in gene_frequency:
+                    gene_frequency[gene] = frequency
+                break
 
-    def get_evidence_by_id(self, _id, return_annotation=True, return_sentence=True):
-        evidence = self.data["evidence"][_id]
-        head, tail, annotation, pmid, sentence = json.loads(evidence)
+        hgvs_frequency = filter_frequency(hgvs_frequency)
+        rs_frequency = filter_frequency(rs_frequency)
+        gene_frequency = filter_frequency(gene_frequency)
+        return hgvs_frequency, rs_frequency, gene_frequency
 
-        if return_annotation:
-            annotation = self.data["annotation"][annotation]
-            annotation = json.loads(annotation)
+    def query_rs(self, rs):
+        hgvs_frequency = self.rs_hgvs_frequency.get(rs, {})
+        rs_frequency = {rs: self.rs_frequency.get(rs, 0)}
+        gene_frequency = {}
+        for geneid, frequency in self.rs_geneid_frequency.get(rs, {}).items():
+            for gene, _ in self.geneid_gene_frequency.get(geneid, {}).items():
+                if gene not in gene_frequency:
+                    gene_frequency[gene] = frequency
+                break
 
-        if return_sentence:
-            sentence = self.data["sentence"][sentence]
-            sentence = json.loads(sentence)
+        hgvs_frequency = filter_frequency(hgvs_frequency)
+        rs_frequency = filter_frequency(rs_frequency)
+        gene_frequency = filter_frequency(gene_frequency)
+        return hgvs_frequency, rs_frequency, gene_frequency
 
-        return head, tail, annotation, pmid, sentence
+    def query_gene(self, gene):
+        geneid = ""
+        frequency = 0
+        for geneid, frequency in self.gene_geneid_frequency.get(gene, {}).items():
+            break
 
-
-class DiskKBBackup:
-    def __init__(self, data_dir):
-        self.data_dir = data_dir
-        self.nen = None
-        self.data = {}
-        self.index = {}
-        return
-
-    def load_nen(self):
-        nen_file = os.path.join(self.data_dir, "type_id_name_frequency.csv")
-        self.nen = NEN(nen_file)
-        return
-
-    def load_data(self, data_type=("evidence", "annotation", "sentence")):
-        for name in data_type:
-            file = os.path.join(self.data_dir, f"{name}.jsonl")
-            self.data[name] = open(file, "r", encoding="utf8")
-        return
-
-    def load_index(self, index_type=("pmid", "type_id", "type_name")):
-        for name in index_type:
-            file = os.path.join(self.data_dir, f"{name}.jsonl")
-            key_value_list = read_json(file, is_jsonl=True)
-            if name == "pmid":
-                self.index[name] = {key: value for key, value in key_value_list}
-            else:
-                self.index[name] = {tuple(key): value for key, value in key_value_list}
-        return
-
-    def get_evidence_ids_by_pmid(self, pmid):
-        assert isinstance(pmid, str)
-        id_list = self.index["pmid"].get(pmid, [])
-        return id_list
-
-    def get_evidence_ids_by_entity(self, entity, key="type_id_name"):
-        assert isinstance(entity, tuple)
-        assert len(entity) == len(key.split("_"))
-        if key in ["type_id", "type_name"]:
-            id_list = self.index[key].get(entity, [])
-        elif key == "type_id_name":
-            _type, _id, name = entity
-            id_list_1 = self.index["type_id"].get((_type, _id), [])
-            id_list_2 = self.index["type_name"].get((_type, name), [])
-            id_list = sorted(set(id_list_1) & set(id_list_2))
+        if not geneid:
+            hgvs_frequency = {}
+            rs_frequency = {}
         else:
-            assert False
-        return id_list
+            hgvs_frequency = self.geneid_hgvs_frequency.get(geneid, {})
+            rs_frequency = self.geneid_rs_frequency.get(geneid, {})
 
-    def get_evidence_ids_by_pair(self, pair, key=("type_id_name", "type_id_name")):
-        head_id_list = self.get_evidence_ids_by_entity(pair[0], key[0])
-        tail_id_list = self.get_evidence_ids_by_entity(pair[1], key[1])
-        id_list = sorted(set(head_id_list) & set(tail_id_list))
-        return id_list
+        gene_frequency = {gene: frequency}
 
-    def get_evidence_by_id(self, _id, return_annotation=True, return_sentence=True):
-        self.data["evidence"].seek(_id)
-        evidence = self.data["evidence"].readline()[:-1]
-        head, tail, annotation, pmid, sentence = json.loads(evidence)
-
-        if return_annotation:
-            self.data["annotation"].seek(annotation)
-            annotation = self.data["annotation"].readline()[:-1]
-            annotation = json.loads(annotation)
-
-        if return_sentence:
-            self.data["sentence"].seek(sentence)
-            sentence = self.data["sentence"].readline()[:-1]
-            sentence = json.loads(sentence)
-
-        return head, tail, annotation, pmid, sentence
+        hgvs_frequency = filter_frequency(hgvs_frequency)
+        rs_frequency = filter_frequency(rs_frequency)
+        gene_frequency = filter_frequency(gene_frequency)
+        return hgvs_frequency, rs_frequency, gene_frequency
 
 
 class KB:
@@ -445,6 +404,30 @@ def test_nen(kb_dir):
     return
 
 
+def test_v2g(variant_dir, gene_dir):
+    v2g = V2G(variant_dir, gene_dir)
+
+    def show_dict(name_to_frequency):
+        for name, frequency in name_to_frequency.items():
+            logger.info(f"{frequency:>6,} {name}")
+        return
+
+    query_list = [
+        "HGVS:p.V600E",
+        "RS#:113488022",
+        "BRAF",
+    ]
+
+    for query in query_list:
+        logger.info("----------")
+        logger.info(f"[{query}]")
+        hgvs_to_frequency, rs_to_frequency, gene_to_frequency = v2g.query(query)
+        show_dict(hgvs_to_frequency)
+        show_dict(rs_to_frequency)
+        show_dict(gene_to_frequency)
+    return
+
+
 def test_kb(kb_dir):
     kb = KB(kb_dir)
     kb.load_data()
@@ -483,13 +466,16 @@ def test_kb(kb_dir):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--kb_dir", type=str, default="pubmedKB-PTC/1_319_disk")
+    parser.add_argument("--variant_dir", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/data/variant")
+    parser.add_argument("--gene_dir", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/data/gene")
     arg = parser.parse_args()
     for key, value in vars(arg).items():
         if value is not None:
             logger.info(f"[{key}] {value}")
 
-    test_nen(arg.kb_dir)
-    test_kb(arg.kb_dir)
+    # test_nen(arg.kb_dir)
+    test_v2g(arg.variant_dir, arg.gene_dir)
+    # test_kb(arg.kb_dir)
     return
 
 

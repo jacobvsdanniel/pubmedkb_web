@@ -8,7 +8,7 @@ import traceback
 
 from flask import Flask, render_template, request
 
-from kb_utils import query_variant, KB
+from kb_utils import query_variant, V2G, KB
 from summary_utils import get_summary
 
 app = Flask(__name__)
@@ -26,6 +26,7 @@ csv.register_dialect(
     "tsv", delimiter="\t", quoting=csv.QUOTE_NONE, quotechar=None, doublequote=False,
     escapechar=None, lineterminator="\n", skipinitialspace=False,
 )
+v2g = V2G(None, None)
 kb = KB(None)
 kb_type = None
 show_eid, eid_list = False, []
@@ -49,6 +50,11 @@ def serve_var():
 @app.route("/rel")
 def serve_rel():
     return render_template("rel.html")
+
+
+@app.route("/v2g")
+def serve_v2g():
+    return render_template("v2g.html")
 
 
 @app.route("/run_nen", methods=["POST"])
@@ -325,6 +331,66 @@ def query_var():
             })
 
         response["match_list"].append(match)
+
+    return json.dumps(response)
+
+
+@app.route("/run_v2g", methods=["POST"])
+def run_v2g():
+    data = json.loads(request.data)
+    query = data["query"].strip()
+    logger.info(f"query={query}")
+
+    hgvs_to_frequency, rs_to_frequency, gene_to_frequency = v2g.query(query)
+    result = ""
+
+    table_html = \
+        f"<table><tr>" \
+        f"<th>Type</th>" \
+        f"<th>Name (Frequency)</th>" \
+        f"</tr>"
+    for key, value in [("HGVS", hgvs_to_frequency), ("RS#", rs_to_frequency), ("Gene", gene_to_frequency)]:
+        logger.info(f"[{key}] {value}")
+
+        key_html = html.escape(f"{key}")
+        value_html = [
+            html.escape(f"{name}") + "&nbsp;" + html.escape(f"({frequency:,})")
+            for name, frequency in value.items()
+        ]
+        value_html = " &nbsp;&nbsp;&nbsp;".join(value_html)
+
+        table_html += \
+            f"<tr>" \
+            f"<td>{key_html}</td>" \
+            f"<td>{value_html}</td>" \
+            f"</tr>"
+
+    table_html += "</table>"
+    result += table_html + "<br />"
+    response = {"result": result}
+    return json.dumps(response)
+
+
+@app.route("/query_v2g")
+def query_v2g():
+    response = {}
+
+    # url argument
+    query = request.args.get("query")
+    response["url_argument"] = {
+        "query": query,
+    }
+    query = query.strip()
+    logger.info(f"query={query}")
+
+    hgvs_to_frequency, rs_to_frequency, gene_to_frequency = v2g.query(query)
+
+    for key, value in [("HGVS", hgvs_to_frequency), ("RS#", rs_to_frequency), ("Gene", gene_to_frequency)]:
+        logger.info(f"[{key}] {value}")
+        response[key] = [
+            {"name": name, "frequency": frequency}
+            for name, frequency in value.items()
+        ]
 
     return json.dumps(response)
 
@@ -855,6 +921,9 @@ def main():
     parser.add_argument("-host", default="0.0.0.0")
     parser.add_argument("-port", default="12345")
 
+    parser.add_argument("--variant_dir", default="data/variant")
+    parser.add_argument("--gene_dir", default="data/gene")
+
     # parser.add_argument("--kb_dir", default="pubmedKB-BERN/189_236_disk")
     # parser.add_argument("--kb_dir", default="pubmedKB-BERN/1_236_disk")
     # parser.add_argument("--kb_dir", default="pubmedKB-PTC/256_319_disk")
@@ -887,6 +956,9 @@ def main():
     for key, value in vars(arg).items():
         if value is not None:
             logger.info(f"[{key}] {value}")
+
+    global v2g
+    v2g = V2G(arg.variant_dir, arg.gene_dir)
 
     global kb
     kb = KB(arg.kb_dir)
