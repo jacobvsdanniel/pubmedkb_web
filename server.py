@@ -918,8 +918,8 @@ def query_rel():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-host", default="0.0.0.0")
-    parser.add_argument("-port", default="12345")
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", default="12345")
 
     parser.add_argument("--variant_dir", default="data/variant")
     parser.add_argument("--gene_dir", default="data/gene")
