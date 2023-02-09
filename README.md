@@ -77,8 +77,14 @@ git checkout 2e79a4bbf4258c88dda1ddc7f4e4f3ee37443896
 ## Web GUI
 
 #### Start server
+
 ```bash
-python server.py -host [host_ip] -port [host_port] --kb_dir [unzipped_dataset_folder] --kb_type [disk/memory]
+python server.py \
+--variant_dir [unzipped_variant_directory] \
+--gene_dir [unzipped_gene_directory] \
+--kb_dir [unzipped_pubmedKB_directory] \
+--kb_type [relation/cooccur] \
+--port 8000
 ```
 
 #### Connect to server
