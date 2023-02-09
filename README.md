@@ -89,5 +89,5 @@ python server.py \
 
 #### Connect to server
 
-Open browser and connect to *[host_ip]:[host_port]*
+Open browser and connect to *[server_ip]:[server_port]*
 
