@@ -26,17 +26,34 @@ Functions
   - Look up relations and evidence sentences for entity or entity pair
   - Specify an entity by name and/or ID
 
-Requirements (to host web GUI for pubmedKB-PTC-disk)
-  - Disk: 13GB
-  - Memory: 13GB
-  - CPU: 1 thread
-
 Dependencies
   - OS-independent
   - python3
   - Flask (a python package)
 
-## Download Datasets
+## Datasets
+
+| Entity data | Disk size |
+| :-: | :-: |
+| [PTC-gene](https://drive.google.com/file/d/1wnnWVFagSE03kxbVZmfjGFbKQoE60IRG)    | 62 MB |
+| [PTC-variant](https://drive.google.com/file/d/1XOvz4kqEhXlLZIS499avMi5DRqpvwgN7) | 26 MB |
+
+| Full pubmedKB (limited access) | Annotation           | #papers | Section  | Disk size (zip size) | Memory usage |
+| :-:                            | :-:                  | :-:     | :-:      | :-:                  | :-:          |
+| [pubmedKB-PTC-rel](https://drive.google.com/file/d/1JPwkkMD6NYdEiIGh6hWjaftlNaeGKlRE) | Entity relation | 10.8 M | Abstract | 13 GB (3 GB) | 6 GB |
+| pubmedKB-PTC-sent              | Entity co-occurrence | 19.4 M  | Abstract | 173 GB (29 GB)       | 14 GB        |
+
+| Partial pubmedKB (open access) | Annotation | #papers | Section | Disk size (zip size) |
+| :-:                            | :-:        | :-:     | :-:     | :-:                  |
+| [pubmedKB-PTC-rel-small](https://drive.google.com/file/d/1RhxhtAqXPvfG7DrxU6EflwuMa_oC1JHC)  | Entity relation      | 1.9 M | Abstract | 2 GB (0.6 GB) |
+| [pubmedKB-PTC-sent-small](https://drive.google.com/file/d/1-l9oOj0ifnhMduhDkUG5BUpYQl8AcTj_) | Entity co-occurrence | 2.7 M | Abstract | 26 GB (4 GB)  |
+
+## Deprecated Datasets
+
+Checkout the [old version of pubmedkb_web](https://github.com/jacobvsdanniel/pubmedkb_web/tree/2e79a4bbf4258c88dda1ddc7f4e4f3ee37443896) to use these datasets.
+```bash
+git checkout 2e79a4bbf4258c88dda1ddc7f4e4f3ee37443896
+```
 
 | Full dataset | zip size | #papers | section | memory-efficient | open access |
 | :-- | --: | --: | :-: | :-: | :-: |
