@@ -1,10 +1,10 @@
 import os
 import sys
 import logging
-from kb_utils import KB, DiskKB
+from kb_utils import KB
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    format="%(asctime)s - %(name)s - %(message)s",
     datefmt="%Y/%m/%d %H:%M:%S",
     level=logging.INFO,
 )
@@ -12,9 +12,8 @@ logging.basicConfig(
 
 def main():
     # Load KB
-    # kb_type, kb_path = "memory", os.path.join("pubmedKB-PTC", "287_319_memory")
-    kb_type, kb_path = "disk", os.path.join("pubmedKB-PTC", "1_319_disk")
-    kb = KB(kb_path) if kb_type == "memory" else DiskKB(kb_path)
+    kb_path = "pubmedkb"
+    kb = KB(kb_path)
     kb.load_nen()
     kb.load_data()
     kb.load_index()
