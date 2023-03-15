@@ -8,7 +8,7 @@ import traceback
 
 from flask import Flask, render_template, request
 
-from kb_utils import query_variant, V2G, KB
+from kb_utils import query_variant, V2G, KB, Meta
 from summary_utils import get_summary
 
 app = Flask(__name__)
@@ -28,6 +28,7 @@ csv.register_dialect(
 )
 v2g = V2G(None, None)
 kb = KB(None)
+kb_meta = Meta(None, None)
 kb_type = None
 show_eid, eid_list = False, []
 
@@ -876,8 +877,9 @@ def query_rel():
         "html": summary_html,
     }
 
-    # create table
+    # create relation table
     response["relation"] = {}
+    pmid_set = set()
 
     for annotator in annotator_list:
         response["relation"][annotator] = []
@@ -889,6 +891,7 @@ def query_rel():
             annotation = rel["annotation"]
             pmid = rel["pmid"]
             sentence = rel["sentence"]
+            pmid_set.add(int(pmid))
 
             for _type, _id, name in rel["head_set"]:
                 head_type_set.add(_type)
@@ -933,6 +936,13 @@ def query_rel():
                 }
             })
 
+    # create paper meta
+    pmid_set = [str(pmid) for pmid in sorted(pmid_set)]
+    response["paper_meta"] = {
+        pmid: kb_meta.get_meta_by_pmid(pmid)
+        for pmid in pmid_set
+    }
+
     return json.dumps(response)
 
 
@@ -950,6 +960,9 @@ def main():
     parser.add_argument("--kb_dir", default="pubmedKB-PTC/1_319_disk")
     # parser.add_argument("--kb_dir", default="pubmedKB-PTC-FT/15823_19778_disk")
     # parser.add_argument("--kb_dir", default="pubmedKB-PTC-FT/1_19778_disk")
+
+    parser.add_argument("--paper_meta_file", default="meta.json")
+    parser.add_argument("--journal_impact_file", default="journal_impact.csv")
 
     parser.add_argument("--kb_type", default="relation", choices=["relation", "cooccur"])
 
@@ -988,6 +1001,9 @@ def main():
 
     global kb_type
     kb_type = arg.kb_type
+
+    global kb_meta
+    kb_meta = Meta(arg.paper_meta_file, arg.journal_impact_file)
 
     global eid_list
     if arg.eid_list:

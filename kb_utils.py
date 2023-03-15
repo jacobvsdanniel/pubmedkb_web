@@ -367,6 +367,37 @@ class KB:
         return head, tail, annotation, pmid, sentence
 
 
+class Meta:
+    def __init__(self, paper_meta_file, journal_impact_file):
+        if paper_meta_file:
+            self.pmid_to_meta = read_json(paper_meta_file)
+        else:
+            self.pmid_to_meta = {}
+
+        self.journal_to_impact = {}
+        if journal_impact_file:
+            journal_data = read_csv(journal_impact_file, "csv")
+            assert journal_data[0] == ["journal", "match_ratio", "match_substring", "match_journal", "match_impact"]
+            journal_data = journal_data[1:]
+            for journal, match_ratio, match_substring, _match_journal, match_impact in journal_data:
+                match_ratio = int(match_ratio[:-1])
+                if match_ratio >= 70 or match_substring == "True":
+                    self.journal_to_impact[journal] = match_impact
+        return
+
+    def get_meta_by_pmid(self, pmid):
+        title, author, year, journal = self.pmid_to_meta.get(pmid, ("", "", "", ""))
+        journal_impact = self.journal_to_impact.get(journal, "")
+        meta = {
+            "title": title,
+            "author": author,
+            "year": year,
+            "journal": journal,
+            "journal_impact": journal_impact,
+        }
+        return meta
+
+
 def test_nen(kb_dir):
     kb = KB(kb_dir)
     kb.load_nen()
@@ -463,19 +494,37 @@ def test_kb(kb_dir):
     return
 
 
+def test_meta(paper_meta_file, journal_impact_file):
+    kb_meta = Meta(paper_meta_file, journal_impact_file)
+
+    pmid = "35267245"
+    paper_meta = kb_meta.get_meta_by_pmid(pmid)
+
+    for key, value in paper_meta.items():
+        logger.info(f"[{key}] {value}")
+    return
+
+
 def main():
     parser = argparse.ArgumentParser()
+
     parser.add_argument("--kb_dir", type=str, default="pubmedKB-PTC/1_319_disk")
+
     parser.add_argument("--variant_dir", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/data/variant")
     parser.add_argument("--gene_dir", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/data/gene")
+
+    parser.add_argument("--paper_meta_file", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/meta.json")
+    parser.add_argument("--journal_impact_file", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/journal_impact.csv")
+
     arg = parser.parse_args()
     for key, value in vars(arg).items():
         if value is not None:
             logger.info(f"[{key}] {value}")
 
     # test_nen(arg.kb_dir)
-    test_v2g(arg.variant_dir, arg.gene_dir)
+    # test_v2g(arg.variant_dir, arg.gene_dir)
     # test_kb(arg.kb_dir)
+    test_meta(arg.paper_meta_file, arg.journal_impact_file)
     return
 
 
