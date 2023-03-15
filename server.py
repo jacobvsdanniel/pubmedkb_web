@@ -431,8 +431,12 @@ def run_rel():
 
     # input: query
     query_filter = data["query_filter"]
-    query_rels = int(data["query_rels"])
-    logger.info(f"[Query] filter={query_filter} #rel={query_rels:,}")
+    query_start = int(data["query_start"])
+    query_end = int(data["query_end"])
+    query_max_rels = query_end - query_start
+    logger.info(
+        f"[Query] filter={query_filter}; rel_range=[{query_start:,} - {query_end:,}); max_rels={query_max_rels:,}"
+    )
 
     # query rel ids
     if eid_list:
@@ -453,7 +457,8 @@ def run_rel():
     else:
         assert False
     rel_ids = len(rel_id_list)
-    logger.info(f"Total #rel = {rel_ids:,}")
+    logger.info(f"Total matching #rel in KB = {rel_ids:,}")
+    rel_id_list = rel_id_list[query_start:query_end]
 
     # collect rel by annotator and group evidence by annotation
     if kb_type == "relation":
@@ -463,7 +468,6 @@ def run_rel():
 
     annotation_id_to_rel = {}
     annotator_to_rel = {annotator: [] for annotator in annotator_list}
-    full_annotator_set = set()
 
     for rel_id in rel_id_list:
         head, tail, annotation_id, _pmid, _sentence_id = kb.get_evidence_by_id(
@@ -473,12 +477,6 @@ def run_rel():
             head, tail, (annotator, annotation), pmid, sentence = kb.get_evidence_by_id(
                 rel_id, return_annotation=True, return_sentence=True,
             )
-
-            if len(annotator_to_rel[annotator]) >= query_rels:
-                full_annotator_set.add(annotator)
-                if len(full_annotator_set) == len(annotator_list):
-                    break
-                continue
 
             if annotator == "odds_ratio":
                 annotation = f"OR: {annotation[0]}, CI: {annotation[1]}, p-value: {annotation[2]}"
@@ -674,16 +672,35 @@ def query_rel():
     e2_name = request.args.get("e2_name")
     query_pmid = request.args.get("query_pmid")
     query_filter = request.args.get("query_filter")
-    query_rels = request.args.get("query_rels")
+    query_start = request.args.get("query_start")
+    query_end = request.args.get("query_end")
 
+    arg_list = [
+        ("e1_filter", e1_filter),
+        ("e1_type", e1_type),
+        ("e1_id", e1_id),
+        ("e1_name", e1_name),
+        ("e2_filter", e2_filter),
+        ("e2_type", e2_type),
+        ("e2_id", e2_id),
+        ("e2_name", e2_name),
+        ("query_pmid", query_pmid),
+        ("query_filter", query_filter),
+        ("query_start", query_start),
+        ("query_end", query_end),
+    ]
     response["url_argument"] = {
-        "e1_filter": e1_filter, "e1_type": e1_type, "e1_id": e1_id, "e1_name": e1_name,
-        "e2_filter": e2_filter, "e2_type": e2_type, "e2_id": e2_id, "e2_name": e2_name,
-        "query_pmid": query_pmid, "query_filter": query_filter, "query_rels": query_rels,
+        arg_name: arg_value
+        for arg_name, arg_value in arg_list
+        if arg_value is not None
     }
 
     # input: e1
-    e1_id, e1_name = e1_id.strip(), e1_name.strip()
+    if e1_id:
+        e1_id = e1_id.strip()
+    if e1_name:
+        e1_name = e1_name.strip()
+
     if e1_filter == "type_id_name":
         e1 = (e1_type, e1_id, e1_name)
     elif e1_filter == "type_id":
@@ -691,11 +708,15 @@ def query_rel():
     elif e1_filter == "type_name":
         e1 = (e1_type, e1_name)
     else:
-        assert False
+        e1 = None
     logger.info(f"[Entity A] key={e1_filter} value={e1}")
 
     # input: e2
-    e2_id, e2_name = e2_id.strip(), e2_name.strip()
+    if e2_id:
+        e2_id = e2_id.strip()
+    if e2_name:
+        e2_name = e2_name.strip()
+
     if e2_filter == "type_id_name":
         e2 = (e2_type, e2_id, e2_name)
     elif e2_filter == "type_id":
@@ -703,16 +724,21 @@ def query_rel():
     elif e2_filter == "type_name":
         e2 = (e2_type, e2_name)
     else:
-        assert False
+        e2 = None
     logger.info(f"[Entity B] key={e2_filter} value={e2}")
 
     # input: pmid
-    query_pmid = query_pmid.strip()
+    if query_pmid:
+        query_pmid = query_pmid.strip()
     logger.info(f"[PMID] value={query_pmid}")
 
     # input: query
-    query_rels = int(query_rels)
-    logger.info(f"[Query] filter={query_filter} #rel={query_rels:,}")
+    query_start = int(query_start)
+    query_end = int(query_end)
+    query_max_rels = query_end - query_start
+    logger.info(
+        f"[Query] filter={query_filter}; rel_range=[{query_start:,} - {query_end:,}); max_rels={query_max_rels:,}"
+    )
 
     # query rel ids
     if eid_list:
@@ -733,7 +759,8 @@ def query_rel():
     else:
         assert False
     rel_ids = len(rel_id_list)
-    logger.info(f"Total #rel = {rel_ids:,}")
+    logger.info(f"Total matching #rel in KB = {rel_ids:,}")
+    rel_id_list = rel_id_list[query_start:query_end]
 
     # collect rel by annotator and group evidence by annotation
     if kb_type == "relation":
@@ -743,7 +770,6 @@ def query_rel():
 
     annotation_id_to_rel = {}
     annotator_to_rel = {annotator: [] for annotator in annotator_list}
-    full_annotator_set = set()
 
     for rel_id in rel_id_list:
         head, tail, annotation_id, _pmid, _sentence_id = kb.get_evidence_by_id(
@@ -753,12 +779,6 @@ def query_rel():
             head, tail, (annotator, annotation), pmid, sentence = kb.get_evidence_by_id(
                 rel_id, return_annotation=True, return_sentence=True,
             )
-
-            if len(annotator_to_rel[annotator]) >= query_rels:
-                full_annotator_set.add(annotator)
-                if len(full_annotator_set) == len(annotator_list):
-                    break
-                continue
 
             if annotator == "odds_ratio":
                 annotation = f"OR: {annotation[0]}, CI: {annotation[1]}, p-value: {annotation[2]}"

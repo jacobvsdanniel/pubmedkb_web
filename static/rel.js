@@ -14,7 +14,8 @@ function run_query(){
 
         "query_pmid": document.getElementById("ta_query_pmid").value,
         "query_filter": document.getElementById("sl_query_filter").value,
-        "query_rels": document.getElementById("ta_query_rels").value,
+        "query_start": document.getElementById("ta_query_start").value,
+        "query_end": document.getElementById("ta_query_end").value,
     };
 
     fetch("./run_rel", {method: "post", body: JSON.stringify(request_data)})
@@ -38,7 +39,8 @@ function get_json(){
     e2_name = document.getElementById("ta_e2_name").value,
     query_pmid = document.getElementById("ta_query_pmid").value,
     query_filter = document.getElementById("sl_query_filter").value,
-    query_rels = document.getElementById("ta_query_rels").value,
+    query_start = document.getElementById("ta_query_start").value,
+    query_end = document.getElementById("ta_query_end").value,
 
     e1_filter = encodeURI(e1_filter)
     e1_type = encodeURI(e1_type)
@@ -50,7 +52,8 @@ function get_json(){
     e2_name = encodeURI(e2_name)
     query_pmid = encodeURI(query_pmid)
     query_filter = encodeURI(query_filter)
-    query_rels = encodeURI(query_rels)
+    query_start = encodeURI(query_start)
+    query_end = encodeURI(query_end)
 
     url = `./query_rel`
     url = `${url}?e1_filter=${e1_filter}`
@@ -63,7 +66,8 @@ function get_json(){
     url = `${url}&e2_name=${e2_name}`
     url = `${url}&query_pmid=${query_pmid}`
     url = `${url}&query_filter=${query_filter}`
-    url = `${url}&query_rels=${query_rels}`
+    url = `${url}&query_start=${query_start}`
+    url = `${url}&query_end=${query_end}`
 
     window.open(url, "_blank");
 }
