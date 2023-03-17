@@ -355,17 +355,24 @@ class KB:
         head, tail, annotation, pmid, sentence = json.loads(evidence)
 
         if return_annotation:
-            self.data["annotation"].seek(annotation)
-            annotation = self.data["annotation"].readline()[:-1]
-            annotation = json.loads(annotation)
+            annotation = self.get_annotation(annotation)
 
         if return_sentence:
-            self.data["sentence"].seek(sentence)
-            sentence = self.data["sentence"].readline()[:-1]
-            sentence = json.loads(sentence)
+            sentence = self.get_sentence(sentence)
 
         return head, tail, annotation, pmid, sentence
 
+    def get_annotation(self, annotation_id):
+        self.data["annotation"].seek(annotation_id)
+        annotation = self.data["annotation"].readline()[:-1]
+        annotation = json.loads(annotation)
+        return annotation
+
+    def get_sentence(self, sentence_id):
+        self.data["sentence"].seek(sentence_id)
+        sentence = self.data["sentence"].readline()[:-1]
+        sentence = json.loads(sentence)
+        return sentence
 
 class Meta:
     def __init__(self, paper_meta_file, journal_impact_file):
