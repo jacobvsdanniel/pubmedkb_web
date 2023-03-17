@@ -135,21 +135,33 @@
 
 </select>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-<label>Return RELs in the index range:</label>
+<label>Process KB items:</label>
 <span>
     [
-    <textarea id="ta_query_start" style="font-size: 14px; width: 50px; height: 18px;">0</textarea>
+    <textarea id="ta_kb_start" style="font-size: 14px; width: 50px; height: 18px;">0</textarea>
     ,
-    <textarea id="ta_query_end" style="font-size: 14px; width: 50px; height: 18px;">100</textarea>
+    <textarea id="ta_kb_end" style="font-size: 14px; width: 50px; height: 18px;">1000</textarea>
+    )
+</span>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label>Return papers:</label>
+<span>
+    [
+    <textarea id="ta_paper_start" style="font-size: 14px; width: 50px; height: 18px;">0</textarea>
+    ,
+    <textarea id="ta_paper_end" style="font-size: 14px; width: 50px; height: 18px;">10</textarea>
     )
 </span>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 
 <br /><br /><br />
+&nbsp;&nbsp;&nbsp;
 <button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="run_query()">show table</button>
-&nbsp;
+&nbsp;&nbsp;&nbsp;
 <button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="get_json()">get json</button>
-<br />
+&nbsp;&nbsp;&nbsp;
+<button type="submit" class="input_submit" style="font-size: 18px; width: 180px; height: 35px;" onClick="get_statistics_json()">get statistics json</button>
+<br /><br />
 <div id="div_status">Ready</div>
 <br /><br />
 
