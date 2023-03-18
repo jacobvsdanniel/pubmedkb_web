@@ -5,6 +5,7 @@ import json
 import difflib
 import logging
 import argparse
+import unicodedata
 import urllib.parse
 from collections import defaultdict
 
@@ -374,34 +375,75 @@ class KB:
         sentence = json.loads(sentence)
         return sentence
 
-class Meta:
-    def __init__(self, paper_meta_file, journal_impact_file):
-        if paper_meta_file:
-            self.pmid_to_meta = read_json(paper_meta_file)
-        else:
-            self.pmid_to_meta = {}
 
+def get_normalized_journal_name(name):
+    name = unicodedata.normalize("NFKC", name)
+    name = name.lower()
+    term_list = []
+    for c in name:
+        if c.isalnum() or c == " ":
+            term_list.append(c)
+        elif c == "&":
+            term_list.append(" and ")
+        else:
+            term_list.append(" ")
+    name = "".join(term_list)
+    name = " ".join(name.split())
+    return name
+
+
+class Meta:
+    def __init__(self, meta_dir):
+        self.meta_file = None
+        self.pmid_to_meta_offset = {}
+        self.pmid_to_cites = {}
         self.journal_to_impact = {}
-        if journal_impact_file:
-            journal_data = read_csv(journal_impact_file, "csv")
-            assert journal_data[0] == ["journal", "match_ratio", "match_substring", "match_journal", "match_impact"]
-            journal_data = journal_data[1:]
-            for journal, match_ratio, match_substring, _match_journal, match_impact in journal_data:
-                match_ratio = int(match_ratio[:-1])
-                if match_ratio >= 70 or match_substring == "True":
-                    self.journal_to_impact[journal] = match_impact
+
+        if not meta_dir:
+            return
+
+        meta_file = os.path.join(meta_dir, "meta.jsonl")
+        self.meta_file = open(meta_file, "r", encoding="utf8")
+
+        pmid_to_meta_offset_file = os.path.join(meta_dir, "pmid_to_meta_offset.json")
+        self.pmid_to_meta_offset = read_json(pmid_to_meta_offset_file)
+
+        pmid_to_citation_file = os.path.join(meta_dir, "pmid_to_citation.json")
+        self.pmid_to_citation = read_json(pmid_to_citation_file)
+
+        journal_impact_file = os.path.join(meta_dir, "journal_impact.csv")
+        journal_impact_data = read_csv(journal_impact_file, "csv")
+        assert journal_impact_data[0] == [
+            "journal", "articles", "match_ratio", "match_substring", "match_journal", "match_impact",
+        ]
+        journal_impact_data = journal_impact_data[1:]
+        self.journal_to_impact = {}
+        for journal, _articles, match_ratio, match_substring, _match_journal, match_impact in journal_impact_data:
+            match_ratio = int(match_ratio[:-1])
+            if match_ratio >= 70 or match_substring == "True":
+                self.journal_to_impact[journal] = match_impact
         return
 
     def get_meta_by_pmid(self, pmid):
-        title, author, year, journal = self.pmid_to_meta.get(pmid, ("", "", "", ""))
-        journal_impact = self.journal_to_impact.get(journal, "")
-        meta = {
-            "title": title,
-            "author": author,
-            "year": year,
-            "journal": journal,
-            "journal_impact": journal_impact,
-        }
+        pmid = str(pmid)
+
+        offset = self.pmid_to_meta_offset.get(pmid)
+        if offset is None:
+            meta = {
+                "title": "",
+                "author": "",
+                "year": "",
+                "journal": "",
+            }
+        else:
+            self.meta_file.seek(offset)
+            meta = self.meta_file.readline()[:-1]
+            meta = json.loads(meta)
+
+        meta["citation"] = self.pmid_to_citation.get(pmid, 0)
+
+        journal = get_normalized_journal_name(meta["journal"])
+        meta["journal_impact"] = self.journal_to_impact.get(journal, "")
         return meta
 
 
@@ -501,8 +543,8 @@ def test_kb(kb_dir):
     return
 
 
-def test_meta(paper_meta_file, journal_impact_file):
-    kb_meta = Meta(paper_meta_file, journal_impact_file)
+def test_meta(meta_dir):
+    kb_meta = Meta(meta_dir)
 
     pmid = "35267245"
     paper_meta = kb_meta.get_meta_by_pmid(pmid)
@@ -520,8 +562,7 @@ def main():
     parser.add_argument("--variant_dir", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/data/variant")
     parser.add_argument("--gene_dir", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/data/gene")
 
-    parser.add_argument("--paper_meta_file", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/meta.json")
-    parser.add_argument("--journal_impact_file", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/journal_impact.csv")
+    parser.add_argument("--meta_dir", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/data/meta")
 
     arg = parser.parse_args()
     for key, value in vars(arg).items():
@@ -531,7 +572,7 @@ def main():
     # test_nen(arg.kb_dir)
     # test_v2g(arg.variant_dir, arg.gene_dir)
     # test_kb(arg.kb_dir)
-    test_meta(arg.paper_meta_file, arg.journal_impact_file)
+    test_meta(arg.meta_dir)
     return
 
 

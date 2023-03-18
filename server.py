@@ -30,7 +30,7 @@ csv.register_dialect(
 )
 v2g = V2G(None, None)
 kb = KB(None)
-kb_meta = Meta(None, None)
+kb_meta = Meta(None)
 kb_type = None
 show_eid, eid_list = False, []
 
@@ -398,75 +398,168 @@ def query_v2g():
     return json.dumps(response)
 
 
-def get_sentence_and_relation_for_one_paper(paper):
-    """
-    collect sentences; collect and group relation by annotator
+class Paper:
+    def __init__(self, pmid):
+        self.pmid = pmid
+        self.meta = {}
 
-    a relation is a merger of the kb evidence items of the same annotation (from the same sentence)
-    a paper is list of (evidence_id, evidence)
-    returns a sentence list and the relation list of each annotator
-    """
+        self.evidence_list = []
+        self.kb_items = 0
 
-    if kb_type == "relation":
-        annotator_list = ["rbert_cre", "odds_ratio", "spacy_ore", "openie_ore"]
-    else:
-        annotator_list = ["co_occurrence"]
+        self.annotator_to_relation = {}
+        self.relations = 0
 
-    annotation_id_to_relation = {}
-    annotator_to_relation = {annotator: [] for annotator in annotator_list}
+        self.sentence_list = []
+        self.sentences = 0
 
-    sentence_id_to_index = {}
-    sentence_list = []
+        self.relevance = 0
+        return
 
-    for evidence_id, (head, tail, annotation_id, pmid, sentence_id) in paper:
-        head_type, head_id, head_name = head
-        tail_type, tail_id, tail_name = tail
+    def get_meta(self):
+        self.meta = kb_meta.get_meta_by_pmid(self.pmid)
+        return
 
-        # sentence
-        if sentence_id not in sentence_id_to_index:
-            sentence_id_to_index[sentence_id] = len(sentence_list)
-            sentence = kb.get_sentence(sentence_id)
-            sentence_list.append(sentence)
-        sentence_index = sentence_id_to_index[sentence_id]
+    def get_sentence_and_relation(self, clean_up_evidence=True):
+        """
+        collect sentences; collect and group relation by annotator
 
-        # relation
-        if annotation_id not in annotation_id_to_relation:
-            annotator, annotation = kb.get_annotation(annotation_id)
-
-            if annotator == "rbert_cre":
-                annotation = f"{annotation[0]}: {annotation[1]}"
-            elif annotator == "odds_ratio":
-                annotation = f"OR: {annotation[0]}, CI: {annotation[1]}, p-value: {annotation[2]}"
-            elif annotator in ["spacy_ore", "openie_ore"]:
-                annotation = ", ".join(annotation)
-
-            relation = {
-                "head": {"type": {head_type}, "id": {head_id}, "name": {head_name}},
-                "tail": {"type": {tail_type}, "id": {tail_id}, "name": {tail_name}},
-                "annotation": annotation,
-                "sentence_index": sentence_index,
-                "evidence_id": [evidence_id],
-            }
-            annotation_id_to_relation[annotation_id] = relation
-            annotator_to_relation[annotator].append(relation)
-
+        a relation is a merger of the kb evidence items of the same annotation (from the same sentence)
+        """
+        if kb_type == "relation":
+            annotator_list = ["rbert_cre", "odds_ratio", "spacy_ore", "openie_ore"]
         else:
-            annotation_id_to_relation[annotation_id]["head"]["type"].add(head_type)
-            annotation_id_to_relation[annotation_id]["head"]["id"].add(head_id)
-            annotation_id_to_relation[annotation_id]["head"]["name"].add(head_name)
-            annotation_id_to_relation[annotation_id]["tail"]["type"].add(tail_type)
-            annotation_id_to_relation[annotation_id]["tail"]["id"].add(tail_id)
-            annotation_id_to_relation[annotation_id]["tail"]["name"].add(tail_name)
-            annotation_id_to_relation[annotation_id]["evidence_id"].append(evidence_id)
+            annotator_list = ["co_occurrence"]
 
-    # sort set into list
-    for _annotator, relation_list in annotator_to_relation.items():
-        for relation in relation_list:
-            for e in ["head", "tail"]:
-                for t in ["type", "id", "name"]:
-                    relation[e][t] = sorted(relation[e][t])
+        annotation_id_to_relation = {}
+        annotator_to_relation = {annotator: [] for annotator in annotator_list}
 
-    return sentence_list, annotator_to_relation
+        sentence_id_to_index = {}
+        sentence_list = []
+
+        for evidence_id, (head, tail, annotation_id, pmid, sentence_id) in self.evidence_list:
+            head_type, head_id, head_name = head
+            tail_type, tail_id, tail_name = tail
+
+            # sentence
+            if sentence_id not in sentence_id_to_index:
+                sentence_id_to_index[sentence_id] = len(sentence_list)
+                sentence = kb.get_sentence(sentence_id)
+                sentence_list.append(sentence)
+            sentence_index = sentence_id_to_index[sentence_id]
+
+            # relation
+            if annotation_id not in annotation_id_to_relation:
+                annotator, annotation = kb.get_annotation(annotation_id)
+
+                if annotator == "rbert_cre":
+                    annotation = f"{annotation[0]}: {annotation[1]}"
+                elif annotator == "odds_ratio":
+                    annotation = f"OR: {annotation[0]}, CI: {annotation[1]}, p-value: {annotation[2]}"
+                elif annotator in ["spacy_ore", "openie_ore"]:
+                    annotation = ", ".join(annotation)
+
+                relation = {
+                    "head": {"type": {head_type}, "id": {head_id}, "name": {head_name}},
+                    "tail": {"type": {tail_type}, "id": {tail_id}, "name": {tail_name}},
+                    "annotation": annotation,
+                    "sentence_index": sentence_index,
+                    "evidence_id": [evidence_id],
+                }
+                annotation_id_to_relation[annotation_id] = relation
+                annotator_to_relation[annotator].append(relation)
+
+            else:
+                annotation_id_to_relation[annotation_id]["head"]["type"].add(head_type)
+                annotation_id_to_relation[annotation_id]["head"]["id"].add(head_id)
+                annotation_id_to_relation[annotation_id]["head"]["name"].add(head_name)
+                annotation_id_to_relation[annotation_id]["tail"]["type"].add(tail_type)
+                annotation_id_to_relation[annotation_id]["tail"]["id"].add(tail_id)
+                annotation_id_to_relation[annotation_id]["tail"]["name"].add(tail_name)
+                annotation_id_to_relation[annotation_id]["evidence_id"].append(evidence_id)
+
+        # sort set into list
+        for _annotator, relation_list in annotator_to_relation.items():
+            for relation in relation_list:
+                for e in ["head", "tail"]:
+                    for t in ["type", "id", "name"]:
+                        relation[e][t] = sorted(relation[e][t])
+
+        self.sentence_list = sentence_list
+        self.sentences = len(sentence_list)
+
+        self.annotator_to_relation = annotator_to_relation
+        self.relations = len(annotation_id_to_relation)
+
+        if clean_up_evidence:
+            self.evidence_list = []
+        return
+
+    def get_relevance(self):
+        relevance = 0
+
+        for annotator, relation_list in self.annotator_to_relation.items():
+            if annotator == "rbert_cre":
+                for relation in relation_list:
+                    score = relation["annotation"]
+                    i = score.rfind(" ")
+                    score = float(score[i + 1:-1]) * 0.01
+                    relevance += score
+
+            elif annotator == "odds_ratio":
+                relevance += 1 * len(relation_list)
+
+            elif annotator == "spacy_ore":
+                relevance += 0.5 * len(relation_list)
+
+            elif annotator == "openie_ore":
+                relevance += 0.5 * len(relation_list)
+
+            elif annotator == "co_occurrence":
+                relevance += 0.1 * len(relation_list)
+
+        self.relevance = relevance
+        return
+
+
+def get_evidence_ids_by_entity(entity, key, return_list=True):
+    if entity[0] == "VARIANT":
+        type_list = ["ProteinMutation", "DNAMutation", "SNP", "CopyNumberVariant"]
+    else:
+        type_list = [entity[0]]
+
+    if len(type_list) == 1:
+        real_type_entity = (type_list[0], *entity[1:])
+        evidence_id_list = kb.get_evidence_ids_by_entity(real_type_entity, key=key)
+        return evidence_id_list
+
+    evidence_id_set_list = []
+
+    for _type in type_list:
+        real_type_entity = (_type, *entity[1:])
+        evidence_id_list = kb.get_evidence_ids_by_entity(real_type_entity, key=key)
+        evidence_id_set_list.append(set(evidence_id_list))
+
+    full_evidence_id_list = set.union(*evidence_id_set_list)
+    del evidence_id_set_list
+
+    if return_list:
+        full_evidence_id_list = sorted(full_evidence_id_list)
+    return full_evidence_id_list
+
+
+def get_evidence_ids_by_pair(pair, key, return_list=True):
+    head_id_set = get_evidence_ids_by_entity(pair[0], key[0], return_list=False)
+    tail_id_set = get_evidence_ids_by_entity(pair[1], key[1], return_list=False)
+
+    if isinstance(head_id_set, list):
+        head_id_set = set(head_id_set)
+    if isinstance(tail_id_set, list):
+        tail_id_set = set(tail_id_set)
+
+    id_list = head_id_set & tail_id_set
+    if return_list:
+        return sorted(id_list)
+    return id_list
 
 
 class Rel:
@@ -485,18 +578,36 @@ class Rel:
         self.arg = copy.deepcopy(str_arg)
 
         self.evidence_id_list = []
+        self.paper_list = []
 
-        self.kb_items = 0
-        self.relations = 0
-        self.sentences = 0
-        self.papers = 0
-        self.paper_evidence_list = []
-
-        self.paper_relation_list = []
-        self.annotator_to_relations = {}
+        self.statistics = {}
 
         self.summary_text = ""
         self.summary_html = ""
+        return
+
+    def run_pipeline(self):
+        self.get_argument()
+        self.get_evidence_id()
+        self.get_paper_evidence()
+        self.get_paper_relation()
+
+        if "paper_sort" in self.arg and self.arg["paper_sort"] in ["citation", "year", "journal_impact"]:
+            self.get_paper_meta()
+            self.sort_paper_and_paginate()
+        else:
+            self.sort_paper_and_paginate()
+            self.get_paper_meta()
+
+        self.get_statistics()
+        self.get_summary()
+        return
+
+    def run_no_pagination_get_statistics_pipeline(self):
+        self.get_argument()
+        self.arg["paper_start"], self.arg["paper_end"] = 0, float("inf")
+        self.get_evidence_id()
+        self.get_paper_evidence()
         return
 
     def get_argument(self):
@@ -563,7 +674,7 @@ class Rel:
         )
         return
 
-    def get_evidence_id_list(self):
+    def get_evidence_id(self):
         arg = self.arg
 
         if eid_list:
@@ -573,18 +684,26 @@ class Rel:
             evidence_id_list = kb.get_evidence_ids_by_pmid(arg["query_pmid"])
 
         elif arg["query_filter"] == "A":
-            evidence_id_list = kb.get_evidence_ids_by_entity(arg["e1"], key=arg["e1_filter"])
+            evidence_id_list = get_evidence_ids_by_entity(arg["e1"], arg["e1_filter"], return_list=True)
 
         elif arg["query_filter"] == "B":
-            evidence_id_list = kb.get_evidence_ids_by_entity(arg["e2"], key=arg["e2_filter"])
+            evidence_id_list = get_evidence_ids_by_entity(arg["e2"], arg["e2_filter"], return_list=True)
 
         elif arg["query_filter"] == "AB":
-            evidence_id_list = kb.get_evidence_ids_by_pair((arg["e1"], arg["e2"]), key=(arg["e1_filter"], arg["e2_filter"]))
+            evidence_id_list = get_evidence_ids_by_pair(
+                (arg["e1"], arg["e2"]),
+                (arg["e1_filter"], arg["e2_filter"]),
+                return_list=True,
+            )
 
         elif arg["query_filter"] == "ABP":
-            ab_list = kb.get_evidence_ids_by_pair((arg["e1"], arg["e2"]), key=(arg["e1_filter"], arg["e2_filter"]))
+            ab_list = get_evidence_ids_by_pair(
+                (arg["e1"], arg["e2"]),
+                (arg["e1_filter"], arg["e2_filter"]),
+                return_list=False,
+            )
             p_list = kb.get_evidence_ids_by_pmid(arg["query_pmid"])
-            evidence_id_list = sorted(set(ab_list) & set(p_list))
+            evidence_id_list = sorted(ab_list & set(p_list))
             del ab_list, p_list
 
         else:
@@ -595,14 +714,14 @@ class Rel:
         self.evidence_id_list = evidence_id_list[arg["kb_start"]:arg["kb_end"]]
         return
 
-    def get_paper_evidence_list(self):
+    def get_paper_evidence(self, clean_up_evidence_id=True):
         arg = self.arg
         evidence_id_list = self.evidence_id_list
 
-        paper_evidence_list = []
-        paper = []
-        previous_pmid = None
+        paper_list = []
+        paper = Paper(None)
         pmids = 0
+
         sentence_id_set = set()
         annotation_id_set = set()
         kb_items = 0
@@ -612,60 +731,127 @@ class Rel:
             _head, _tail, annotation_id, pmid, sentence_id = evidence
 
             # check if we have arrived at new paper
-            if pmid != previous_pmid:
-                if pmids == arg["paper_end"]:
+            if pmid != paper.pmid:
+                if "paper_sort" not in arg and pmids == arg["paper_end"]:  # pagination early stop if no sorting
                     break
                 else:
-                    if paper:
-                        paper_evidence_list.append((previous_pmid, paper))
-                    paper = []
-                    previous_pmid = pmid
+                    if paper.evidence_list:
+                        paper.kb_items = len(paper.evidence_list)
+                        paper_list.append(paper)
+                    paper = Paper(pmid)
                     pmids += 1
 
-            if pmids > arg["paper_start"]:
-                paper.append((evidence_id, evidence))
+            if "paper_sort" in arg or pmids > arg["paper_start"]:  # pagination initial skip if no sorting
+                paper.evidence_list.append((evidence_id, evidence))
                 kb_items += 1
                 annotation_id_set.add(annotation_id)
                 sentence_id_set.add(sentence_id)
-        if paper:
-            paper_evidence_list.append((previous_pmid, paper))
+        if paper.evidence_list:
+            paper.kb_items = len(paper.evidence_list)
+            paper_list.append(paper)
 
-        self.kb_items = kb_items
-        self.relations = len(annotation_id_set)
-        self.sentences = len(sentence_id_set)
-        self.papers = len(paper_evidence_list)
-        self.paper_evidence_list = paper_evidence_list
+        self.paper_list = paper_list
+        if clean_up_evidence_id:
+            self.evidence_id_list = []
 
-        logger.info(
-            f"{self.papers:,} papers;"
-            f" {self.sentences:,} sentences;"
-            f" {self.relations:,} relations;"
-            f" {self.kb_items:,} kb_items"
-        )
+        self.statistics = {
+            "papers": len(paper_list),
+            "sentences": len(sentence_id_set),
+            "relations": len(annotation_id_set),
+            "kb_items": kb_items,
+        }
+        log = "[statistics before sorting and pagination] "
+        for item, number in self.statistics.items():
+            log += f" {number:,} {item};"
+        logger.info(log[:-1])
         return
 
-    def get_paper_relation_list(self, clean_up_paper_evidence=True):
-        paper_relation_list = []
+    def get_paper_relation(self, clean_up_evidence=True):
+        for paper in self.paper_list:
+            paper.get_sentence_and_relation(clean_up_evidence=clean_up_evidence)
+        return
+
+    def get_paper_meta(self):
+        for paper in self.paper_list:
+            paper.get_meta()
+        return
+
+    def sort_paper_and_paginate(self):
+        arg = self.arg
+
+        if "paper_sort" not in arg:
+            return
+
+        elif arg["paper_sort"] == "relevance":
+            for paper in self.paper_list:
+                paper.get_relevance()
+                paper.sort_key = (paper.relevance, int(paper.pmid))
+
+        elif arg["paper_sort"] == "citation":
+            for paper in self.paper_list:
+                try:
+                    citation = int(paper.meta["citation"])
+                except ValueError:
+                    citation = 0
+                paper.sort_key = (citation, int(paper.pmid))
+
+        elif arg["paper_sort"] == "year":
+            for paper in self.paper_list:
+                try:
+                    year = int(paper.meta["year"])
+                except ValueError:
+                    year = 0
+                paper.sort_key = (year, int(paper.pmid))
+
+        elif arg["paper_sort"] == "journal_impact":
+            for paper in self.paper_list:
+                try:
+                    journal_impact = float(paper.meta["journal_impact"])
+                except ValueError:
+                    journal_impact = 0
+                paper.sort_key = (journal_impact, int(paper.pmid))
+
+        else:
+            assert False
+
+        self.paper_list = sorted(self.paper_list, key=lambda p: p.sort_key, reverse=True)
+        i = arg["paper_start"]
+        j = None if isinstance(arg["paper_end"], float) else arg["paper_end"]
+        self.paper_list = self.paper_list[i:j]
+        return
+
+    def get_statistics(self):
+        kb_items = 0
+        relations = 0
+        sentences = 0
         annotator_to_relations = defaultdict(lambda: 0)
 
-        for pmid, paper in self.paper_evidence_list:
-            sentence_list, annotator_to_relation = get_sentence_and_relation_for_one_paper(paper)
-            paper_relation_list.append({
-                "pmid": pmid,
-                "sentence_list": sentence_list,
-                "annotator_to_relation": annotator_to_relation,
-            })
-            for annotator, relation_list in annotator_to_relation.items():
+        for paper in self.paper_list:
+            kb_items += paper.kb_items
+            relations += paper.relations
+            sentences += paper.sentences
+            for annotator, relation_list in paper.annotator_to_relation.items():
                 annotator_to_relations[annotator] += len(relation_list)
 
-        self.paper_relation_list = paper_relation_list
-        self.annotator_to_relations = annotator_to_relations
+        papers = len(self.paper_list)
+        self.statistics = {
+            "papers": papers,
+            "sentences": sentences,
+            "relations": relations,
+            "kb_items": kb_items,
+        }
 
+        log = "[statistics] "
+        for item, number in self.statistics.items():
+            log += f" {number:,} {item};"
+        logger.info(log[:-1])
+
+        self.statistics["annotator_to_relations"] = annotator_to_relations
+
+        log = "[statistics] relations: "
         for annotator, relations in annotator_to_relations.items():
-            logger.info(f"[{annotator}] {relations:,}")
-
-        if clean_up_paper_evidence:
-            self.paper_evidence_list = []
+            log += f" {relations:,} {annotator};"
+        logger.info(log[:-1])
         return
 
     def get_summary(self):
@@ -674,8 +860,8 @@ class Rel:
         if kb_type == "relation":
             summary_evidence_id_list = [
                 _id
-                for paper_relation in self.paper_relation_list
-                for _annotator, relation_list in paper_relation["annotator_to_relation"].items()
+                for paper in self.paper_list
+                for _annotator, relation_list in paper.annotator_to_relation.items()
                 for relation in relation_list
                 for _id in relation["evidence_id"]
             ]
@@ -756,37 +942,27 @@ def run_rel():
     raw_arg = json.loads(request.data)
 
     rel = Rel(raw_arg)
-    rel.get_argument()
-    rel.get_evidence_id_list()
-    rel.get_paper_evidence_list()
-    rel.get_paper_relation_list()
-    rel.get_summary()
-
-    if kb_type == "relation":
-        annotator_list = ["rbert_cre", "odds_ratio", "spacy_ore", "openie_ore"]
-    else:
-        annotator_list = ["co_occurrence"]
+    rel.run_pipeline()
 
     # statistics table
-    statistics_table_html = \
-        "<table><tr>" \
-        "<th>paper</th>" \
-        "<th>sentence</th>" \
-        "<th>relation</th>" \
-        "<th>kb_item</th>"
-    for annotator in annotator_list:
-        statistics_table_html += f"<th>relation: {annotator}</th>"
+    statistics_table_html = "<table>"
+
+    statistics_table_html += "<tr>"
+    for key, value in rel.statistics.items():
+        if key != "annotator_to_relations":
+            statistics_table_html += f"<th>{key}</th>"
+        else:
+            for annotator, _relations in value.items():
+                statistics_table_html += f"<th>{annotator}</th>"
     statistics_table_html += "</tr>"
 
-    statistics_table_html += \
-        "<tr>" \
-        f"<td>{rel.papers}</td>" \
-        f"<td>{rel.sentences}</td>" \
-        f"<td>{rel.relations}</td>" \
-        f"<td>{rel.kb_items}</td>"
-
-    for annotator, relations in rel.annotator_to_relations.items():
-        statistics_table_html += f"<td>{relations:,}</td>"
+    statistics_table_html += "<tr>"
+    for key, value in rel.statistics.items():
+        if key != "annotator_to_relations":
+            statistics_table_html += f"<td>{value:,}</td>"
+        else:
+            for _annotator, relations in value.items():
+                statistics_table_html += f"<td>{relations:,}</td>"
     statistics_table_html += "</tr><table>"
 
     # relation table
@@ -800,13 +976,12 @@ def run_rel():
         f'<th style="width:30%">Sentence</th>' \
         f"</tr>"
 
-    for paper_relation in rel.paper_relation_list:
-        pmid = paper_relation["pmid"]
-        sentence_list = paper_relation["sentence_list"]
-        annotator_to_relation = paper_relation["annotator_to_relation"]
+    for paper in rel.paper_list:
+        pmid = paper.pmid
+        sentence_list = paper.sentence_list
+        annotator_to_relation = paper.annotator_to_relation
 
-        for annotator in annotator_list:
-            relation_list = annotator_to_relation[annotator]
+        for annotator, relation_list in annotator_to_relation.items():
             annotator_html = html.escape(annotator)
 
             for relation in relation_list:
@@ -886,29 +1061,24 @@ def query_rel():
     raw_arg = request.args
 
     rel = Rel(raw_arg)
-    rel.get_argument()
-    rel.get_evidence_id_list()
-    rel.get_paper_evidence_list()
-    rel.get_paper_relation_list()
-    rel.get_summary()
+    rel.run_pipeline()
 
     response = {
         "url_argument": rel.str_arg,
+        "result_statistics": rel.statistics,
         "summary": {
             "text": rel.summary_text,
             "html": rel.summary_html,
         },
-        "paper_relation": rel.paper_relation_list,
-        "paper_meta": {
-            paper_relation["pmid"]: kb_meta.get_meta_by_pmid(paper_relation["pmid"])
-            for paper_relation in rel.paper_relation_list
-        },
-        "result_statistics": {
-            "papers": rel.papers,
-            "sentences": rel.sentences,
-            "relations": rel.relations,
-            "kb_items": rel.kb_items,
-        },
+        "paper_list": [
+            {
+                "pmid": paper.pmid,
+                "meta": paper.meta,
+                "sentence_list": paper.sentence_list,
+                "annotator_to_relation": paper.annotator_to_relation,
+            }
+            for paper in rel.paper_list
+        ],
     }
     return json.dumps(response)
 
@@ -918,18 +1088,11 @@ def query_rel_statistics():
     raw_arg = request.args
 
     rel = Rel(raw_arg)
-    rel.get_argument()
-    rel.get_evidence_id_list()
-    rel.get_paper_evidence_list()
+    rel.run_no_pagination_get_statistics_pipeline()
 
     response = {
         "url_argument": rel.str_arg,
-        "result_statistics": {
-            "papers": rel.papers,
-            "sentences": rel.sentences,
-            "relations": rel.relations,
-            "kb_items": rel.kb_items,
-        },
+        "result_statistics": rel.statistics,
     }
     return json.dumps(response)
 
@@ -941,6 +1104,8 @@ def main():
 
     parser.add_argument("--variant_dir", default="data/variant")
     parser.add_argument("--gene_dir", default="data/gene")
+    parser.add_argument("--meta_dir", default="data/meta")
+    parser.add_argument("--kb_type", default="relation", choices=["relation", "cooccur"])
 
     # parser.add_argument("--kb_dir", default="pubmedKB-BERN/189_236_disk")
     # parser.add_argument("--kb_dir", default="pubmedKB-BERN/1_236_disk")
@@ -948,11 +1113,6 @@ def main():
     parser.add_argument("--kb_dir", default="pubmedKB-PTC/1_319_disk")
     # parser.add_argument("--kb_dir", default="pubmedKB-PTC-FT/15823_19778_disk")
     # parser.add_argument("--kb_dir", default="pubmedKB-PTC-FT/1_19778_disk")
-
-    parser.add_argument("--paper_meta_file", default="meta.json")
-    parser.add_argument("--journal_impact_file", default="journal_impact.csv")
-
-    parser.add_argument("--kb_type", default="relation", choices=["relation", "cooccur"])
 
     parser.add_argument("--eid_list", default="")
     # parser.add_argument(  # pubmedKB-PTC, V600E, MESH:D009369, #rel=20
@@ -991,7 +1151,7 @@ def main():
     kb_type = arg.kb_type
 
     global kb_meta
-    kb_meta = Meta(arg.paper_meta_file, arg.journal_impact_file)
+    kb_meta = Meta(arg.meta_dir)
 
     global eid_list
     if arg.eid_list:

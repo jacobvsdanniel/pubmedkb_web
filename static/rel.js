@@ -14,10 +14,12 @@ function run_query(){
 
         "query_pmid": document.getElementById("ta_query_pmid").value,
         "query_filter": document.getElementById("sl_query_filter").value,
+
         "kb_start": document.getElementById("ta_kb_start").value,
         "kb_end": document.getElementById("ta_kb_end").value,
         "paper_start": document.getElementById("ta_paper_start").value,
         "paper_end": document.getElementById("ta_paper_end").value,
+        "paper_sort": document.getElementById("sl_paper_sort").value,
     };
 
     fetch("./run_rel", {method: "post", body: JSON.stringify(request_data)})
@@ -45,6 +47,7 @@ function get_json(){
     kb_end = document.getElementById("ta_kb_end").value,
     paper_start = document.getElementById("ta_paper_start").value,
     paper_end = document.getElementById("ta_paper_end").value,
+    paper_sort = document.getElementById("sl_paper_sort").value,
 
     e1_filter = encodeURI(e1_filter)
     e1_type = encodeURI(e1_type)
@@ -60,6 +63,7 @@ function get_json(){
     kb_end = encodeURI(kb_end)
     paper_start = encodeURI(paper_start)
     paper_end = encodeURI(paper_end)
+    paper_sort = encodeURI(paper_sort)
 
     url = `./query_rel`
     url = `${url}?e1_filter=${e1_filter}`
@@ -76,6 +80,7 @@ function get_json(){
     url = `${url}&kb_end=${kb_end}`
     url = `${url}&paper_start=${paper_start}`
     url = `${url}&paper_end=${paper_end}`
+    url = `${url}&paper_sort=${paper_sort}`
 
     window.open(url, "_blank");
 }
@@ -95,6 +100,7 @@ function get_statistics_json(){
     kb_end = document.getElementById("ta_kb_end").value,
     paper_start = document.getElementById("ta_paper_start").value,
     paper_end = document.getElementById("ta_paper_end").value,
+    paper_sort = document.getElementById("sl_paper_sort").value,
 
     e1_filter = encodeURI(e1_filter)
     e1_type = encodeURI(e1_type)
@@ -110,6 +116,7 @@ function get_statistics_json(){
     kb_end = encodeURI(kb_end)
     paper_start = encodeURI(paper_start)
     paper_end = encodeURI(paper_end)
+    paper_sort = encodeURI(paper_sort)
 
     url = `./query_rel_statistics`
     url = `${url}?e1_filter=${e1_filter}`
@@ -126,6 +133,7 @@ function get_statistics_json(){
     url = `${url}&kb_end=${kb_end}`
     url = `${url}&paper_start=${paper_start}`
     url = `${url}&paper_end=${paper_end}`
+    url = `${url}&paper_sort=${paper_sort}`
 
     window.open(url, "_blank");
 }
