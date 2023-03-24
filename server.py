@@ -452,11 +452,24 @@ class Paper:
                 annotator, annotation = kb.get_annotation(annotation_id)
 
                 if annotator == "rbert_cre":
-                    annotation = f"{annotation[0]}: {annotation[1]}"
+                    annotation = {
+                        "relation": annotation[0],
+                        "score": annotation[1],
+                    }
                 elif annotator == "odds_ratio":
-                    annotation = f"OR: {annotation[0]}, CI: {annotation[1]}, p-value: {annotation[2]}"
+                    annotation = {
+                        "OR": annotation[0],
+                        "CI": annotation[1],
+                        "p-value": annotation[2],
+                    }
                 elif annotator in ["spacy_ore", "openie_ore"]:
-                    annotation = ", ".join(annotation)
+                    annotation = {
+                        "subject": annotation[0],
+                        "predicate": annotation[1],
+                        "object": annotation[2],
+                    }
+                elif annotator == "co_occurrence":
+                    pass
 
                 relation = {
                     "head": {"type": {head_type}, "id": {head_id}, "name": {head_name}},
@@ -484,6 +497,14 @@ class Paper:
                     for t in ["type", "id", "name"]:
                         relation[e][t] = sorted(relation[e][t])
 
+        # sort cre relation by score
+        if "rbert_cre" in annotator_to_relation:
+            annotator_to_relation["rbert_cre"] = sorted(
+                annotator_to_relation["rbert_cre"],
+                key=lambda r: float(r["annotation"]["score"][:-1]),
+                reverse=True,
+            )
+
         self.sentence_list = sentence_list
         self.sentences = len(sentence_list)
 
@@ -500,9 +521,8 @@ class Paper:
         for annotator, relation_list in self.annotator_to_relation.items():
             if annotator == "rbert_cre":
                 for relation in relation_list:
-                    score = relation["annotation"]
-                    i = score.rfind(" ")
-                    score = float(score[i + 1:-1]) * 0.01
+                    score = relation["annotation"]["score"]
+                    score = float(score[:-1]) * 0.01
                     relevance += score
 
             elif annotator == "odds_ratio":
@@ -1012,8 +1032,17 @@ def run_rel():
 
                 head_html = f"<b>{head_name}</b>{head_type}<i>{head_id}</i>"
                 tail_html = f"<b>{tail_name}</b>{tail_type}<i>{tail_id}</i>"
-                annotation_html = html.escape(annotation)
                 pmid_html = f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{pmid}</a>'
+
+                if annotator == "rbert_cre":
+                    annotation = f"{annotation['relation']}: {annotation['score']}"
+                elif annotator == "odds_ratio":
+                    annotation = f"OR: {annotation['OR']}, CI: {annotation['CI']}, p-value: {annotation['p-value']}"
+                elif annotator in ["spacy_ore", "openie_ore"]:
+                    annotation = f"{annotation['subject']}, {annotation['predicate']}, {annotation['object']}"
+                elif annotator == "co_occurrence":
+                    annotation = str(annotation)
+                annotation_html = html.escape(annotation)
 
                 if isinstance(sentence, str):
                     section_type = "ABSTRACT"
