@@ -6,7 +6,6 @@ import difflib
 import logging
 import argparse
 import unicodedata
-import urllib.parse
 from collections import defaultdict
 
 import requests
@@ -25,6 +24,28 @@ csv.register_dialect(
     "tsv", delimiter="\t", quoting=csv.QUOTE_NONE, quotechar=None, doublequote=False,
     escapechar=None, lineterminator="\n", skipinitialspace=False,
 )
+
+ner_gvdc_mapping = {
+    "Gene": "gene",
+    "Disease": "disease",
+    "Chemical": "drug",
+    "ProteinMutation": "mutation",
+    "DNAMutation": "mutation",
+    "SNP": "mutation",
+    "DNAAcidChange": "mutation",
+    "CopyNumberVariant": "mutation",
+    "Mutation": "mutation",
+}
+entity_type_to_real_type_mapping = {
+    "VARIANT": [
+        "ProteinMutation",
+        "DNAMutation",
+        "SNP",
+        "DNAAcidChange",
+        "CopyNumberVariant",
+        "Mutation",
+    ],
+}
 
 
 def read_lines(file, line_by_line=False, write_log=True):
@@ -76,11 +97,62 @@ def read_csv(file, dialect, write_log=True):
     return row_list
 
 
+def intersection_of_key_to_set(dict_list):
+    if len(dict_list) <= 1:
+        return dict_list[0]
+
+    dict_list = sorted(dict_list, key=lambda d: len(d))
+    smallest_dict, other_dict_list = dict_list[0], dict_list[1:]
+    del dict_list
+
+    key_to_value_set = {}
+    for key, value_set in smallest_dict.items():
+        if any(
+            key not in other_dict
+            for other_dict in other_dict_list
+        ):
+            continue
+
+        value_set = set(
+            value
+            for value in value_set
+            if all(
+                value in other_dict[key]
+                for other_dict in other_dict_list
+            )
+        )
+
+        if value_set:
+            key_to_value_set[key] = value_set
+
+    return key_to_value_set
+
+
+def union_of_key_to_set(dict_list):
+    if len(dict_list) <= 1:
+        return dict_list[0]
+
+    key_set = set(
+        key
+        for key_to_value_set in dict_list
+        for key in key_to_value_set
+    )
+
+    key_to_value_set = {
+        key: set(
+            value
+            for key_to_value_set in dict_list
+            for value in key_to_value_set.get(key, set())
+        )
+        for key in key_set
+    }
+    return key_to_value_set
+
+
 def query_variant(query):
-    query_quote = urllib.parse.quote(query)
     response = requests.get(
         "https://www.ncbi.nlm.nih.gov/research/litvar2-api/variant/autocomplete/",
-        params={"query": query_quote},
+        params={"query": query},
     )
     result_list = response.json()
     variant_list = []
@@ -135,13 +207,19 @@ class NEN:
         self.type_id_name_frequency = defaultdict(lambda: defaultdict(lambda: {}))
         self.name_type_id = defaultdict(lambda: defaultdict(lambda: []))
         self.length_name = defaultdict(lambda: set())
-        self.variant_type_list = ["ProteinMutation", "DNAMutation", "SNP", "CopyNumberVariant"]
 
-        type_id_name_frequency_list = read_csv(data_file, "csv")
-        for _type, _id, name, frequency in type_id_name_frequency_list[1:]:
-            self.type_id_name_frequency[_type][_id][name] = int(frequency)
-            self.name_type_id[name][_type].append(_id)
-            self.length_name[len(name)].add(name)
+        if data_file:
+            logger.info(f"Reading {data_file}")
+            with open(data_file, "r", encoding="utf8", newline="") as f:
+                reader = csv.reader(f, dialect="csv")
+                _header = next(reader)
+                tuples = 0
+                for _type, _id, name, frequency in reader:
+                    self.type_id_name_frequency[_type][_id][name] = int(frequency)
+                    self.name_type_id[name][_type].append(_id)
+                    self.length_name[len(name)].add(name)
+                    tuples += 1
+                logger.info(f"Read {tuples:,} tuples")
         return
 
     def get_names_by_query(self, query, case_sensitive=False, max_length_diff=1, min_similarity=0.85, max_names=20):
@@ -191,7 +269,7 @@ class NEN:
     def get_variant_in_kb(self, id_list, name_list):
         type_id_name_frequency = []
 
-        for _type in self.variant_type_list:
+        for _type in entity_type_to_real_type_mapping["VARIANT"]:
             for _id in id_list:
                 for name in name_list:
                     frequency = self.type_id_name_frequency.get(_type, {}).get(_id, {}).get(name, None)
@@ -286,18 +364,18 @@ class V2G:
 class KB:
     def __init__(self, data_dir):
         self.data_dir = data_dir
-        self.nen = None
+        self.nen = NEN(None)
         self.data = {}
         self.key = {}
         self.value = {}
         return
 
     def load_nen(self):
-        nen_file = os.path.join(self.data_dir, "type_id_name_frequency.csv")
+        nen_file = os.path.join(self.data_dir, "nen.csv")
         self.nen = NEN(nen_file)
         return
 
-    def load_data(self, data_type=("evidence", "annotation", "sentence")):
+    def load_data(self, data_type=("sentence", "annotation")):
         for name in data_type:
             file = os.path.join(self.data_dir, f"{name}.jsonl")
             self.data[name] = open(file, "r", encoding="utf8")
@@ -309,71 +387,235 @@ class KB:
             self.value[name] = open(value_file, "r", encoding="utf8")
 
             key_file = os.path.join(self.data_dir, f"{name}_key.jsonl")
-            key_list = read_json(key_file, is_jsonl=True)
-            if name == "pmid":
-                self.key[name] = {key: value_offset for key, value_offset in key_list}
-            else:
-                self.key[name] = {tuple(key): value_offset for key, value_offset in key_list}
+            logger.info(f"Reading {key_file}")
+            self.key[name] = {}
+
+            with open(key_file, "r", encoding="utf8") as f:
+                if name == "pmid":
+                    for line in f:
+                        key, value_offset = json.loads(line[:-1])
+                        self.key[name][key] = value_offset
+                else:
+                    for line in f:
+                        key, value_offset = json.loads(line[:-1])
+                        self.key[name][tuple(key)] = value_offset
+
+            keys = len(self.key[name])
+            logger.info(f"Read {keys:,} keys")
         return
 
-    def get_evidence_ids_by_key(self, key_type, key):
-        value_offset = self.key[key_type].get(key, None)
-        if value_offset is None:
-            return []
-        self.value[key_type].seek(value_offset)
-        id_list_string = self.value[key_type].readline()[:-1]
-        id_list = json.loads(id_list_string)
-        return id_list
+    def get_sentence(self, sentence_file_offset):
+        """
 
-    def get_evidence_ids_by_pmid(self, pmid):
-        assert isinstance(pmid, str)
-        id_list = self.get_evidence_ids_by_key("pmid", pmid)
-        return id_list
+        :param sentence_file_offset: int
+        :return: [sentence: str, mention_list: list]
+            mention: [name: str, type: str, id_list: list, start_position_in_sentence: int]
+        """
+        self.data["sentence"].seek(sentence_file_offset)
+        sentence = self.data["sentence"].readline()[:-1]
+        sentence = json.loads(sentence)
+        return sentence
 
-    def get_evidence_ids_by_entity(self, entity, key="type_id_name"):
-        assert isinstance(entity, tuple)
-        assert len(entity) == len(key.split("_"))
-        if key in ["type_id", "type_name"]:
-            id_list = self.get_evidence_ids_by_key(key, entity)
-        elif key == "type_id_name":
-            _type, _id, name = entity
-            id_list_1 = self.get_evidence_ids_by_key("type_id", (_type, _id))
-            id_list_2 = self.get_evidence_ids_by_key("type_name", (_type, name))
-            id_list = sorted(set(id_list_1) & set(id_list_2))
-        else:
-            assert False
-        return id_list
+    def get_annotation(self, annotation_file_offset):
+        """
 
-    def get_evidence_ids_by_pair(self, pair, key=("type_id_name", "type_id_name")):
-        head_id_list = self.get_evidence_ids_by_entity(pair[0], key[0])
-        tail_id_list = self.get_evidence_ids_by_entity(pair[1], key[1])
-        id_list = sorted(set(head_id_list) & set(tail_id_list))
-        return id_list
-
-    def get_evidence_by_id(self, _id, return_annotation=True, return_sentence=True):
-        self.data["evidence"].seek(_id)
-        evidence = self.data["evidence"].readline()[:-1]
-        head, tail, annotation, pmid, sentence = json.loads(evidence)
-
-        if return_annotation:
-            annotation = self.get_annotation(annotation)
-
-        if return_sentence:
-            sentence = self.get_sentence(sentence)
-
-        return head, tail, annotation, pmid, sentence
-
-    def get_annotation(self, annotation_id):
-        self.data["annotation"].seek(annotation_id)
+        :param annotation_file_offset: int
+        :return: [
+            sentence_file_offset: int,
+            h_list: list[int],
+            t_list: list[int],
+            annotator: str,
+            annotation: dict,
+        ]
+        """
+        self.data["annotation"].seek(annotation_file_offset)
         annotation = self.data["annotation"].readline()[:-1]
         annotation = json.loads(annotation)
         return annotation
 
-    def get_sentence(self, sentence_id):
-        self.data["sentence"].seek(sentence_id)
-        sentence = self.data["sentence"].readline()[:-1]
-        sentence = json.loads(sentence)
-        return sentence
+    def query_annotation_list_by_pmid(self, pmid):
+        """
+
+        :param pmid: str
+        :return: [(annotation_file_offset, annotation_score), ...]
+        """
+        value_offset = self.key["pmid"].get(pmid, None)
+        if value_offset is None:
+            return []
+
+        self.value["pmid"].seek(value_offset)
+        ann_list = self.value["pmid"].readline()[:-1]
+        ann_list = json.loads(ann_list)
+        return ann_list
+
+    def query_ht_pmid_annlist_by_type_idname(self, idname, key):
+        """
+
+        :param idname: "type_id" / "type_name"
+        :param key: (_type, id/name)
+        :return: {
+            "head": ...
+            "tail": {
+                pmid: [(annotation_file_offset, annotation_score), ...],
+                ...
+            }
+        }
+        """
+        value_offset = self.key[idname].get(key, None)
+        if value_offset is None:
+            return {"head": {}, "tail": {}}
+
+        self.value[idname].seek(value_offset)
+        ht_pmid_ann = self.value[idname].readline()[:-1]
+        ht_pmid_ann = json.loads(ht_pmid_ann)
+        return ht_pmid_ann
+
+    def query_ht_pmid_annset_by_entity(self, entity_spec, pmid, idname_key_ht_pmid_ann=None):
+        """
+
+        :param entity_spec: (
+            "OR",
+            ("type_id", ("VARIANT", "RS#:113488022")),
+            (
+                "AND",
+                ("type_id", ("ProteinMutation", "HGVS:p.V600E")),
+                ("type_id", ("CorrespondingGene", "673")),
+            ),
+        )
+        :param pmid: None / "35246262"
+        :param idname_key_ht_pmid_ann: "type_id"/"type_name" -> (type, id/name) -> "head"/"tail" -> pmid -> ann_list
+            ann_list: [(annotation_file_offset, annotation_score), ...]
+        :return: "head"/"tail" -> pmid -> ann_set
+        """
+        # shared storage to avoid repeated self.query_annotation_by_type_idname()
+        if idname_key_ht_pmid_ann is None:
+            idname_key_ht_pmid_ann = {
+                idname: {}
+                for idname in ["type_id", "type_name"]
+            }
+
+        op, arg = entity_spec
+
+        if op in ["AND", "OR"]:
+            ht_to_list_of_pmid_ann = {"head": [], "tail": []}
+            for sub_entity_spec in arg:
+                ht_pmid_ann = self.query_ht_pmid_annset_by_entity(sub_entity_spec, pmid, idname_key_ht_pmid_ann)
+                for ht, pmid_to_ann in ht_pmid_ann.items():
+                    ht_to_list_of_pmid_ann[ht].append(pmid_to_ann)
+                if op == "AND" and not ht_pmid_ann["head"] and not ht_pmid_ann["tail"]:
+                    break  # early stop when the intersection is already sure be empty
+
+            if op == "AND":
+                merge_function = intersection_of_key_to_set
+            else:
+                merge_function = union_of_key_to_set
+
+            ht_pmid_ann = {
+                ht: merge_function(list_of_pmid_ann)
+                for ht, list_of_pmid_ann in ht_to_list_of_pmid_ann.items()
+            }
+            return ht_pmid_ann
+
+        elif op in ["type_id", "type_name"]:
+            idname = op
+            _type, idname_key = arg
+            real_type_list = entity_type_to_real_type_mapping.get(_type, [_type])
+
+            if len(real_type_list) > 1:
+                expanded_entity_spec = ("OR", (
+                    (idname, (real_type, idname_key))
+                    for real_type in real_type_list
+                ))
+                return self.query_ht_pmid_annset_by_entity(expanded_entity_spec, pmid, idname_key_ht_pmid_ann)
+
+            else:
+                _type = real_type_list[0]
+                key = (_type, idname_key)
+
+                if key in idname_key_ht_pmid_ann[idname]:
+                    # use result cached in shared storage
+                    ht_pmid_ann = idname_key_ht_pmid_ann[idname][key]
+                else:
+                    # query type_id/name, filter by pmid, and then save to shared storage
+                    ht_pmid_ann = self.query_ht_pmid_annlist_by_type_idname(idname, key)
+                    if pmid:
+                        ht_single_pmid_ann = {}
+                        for ht, pmid_to_ann in ht_pmid_ann.items():
+                            if pmid in pmid_to_ann:
+                                ht_single_pmid_ann[ht] = {pmid: pmid_to_ann[pmid]}
+                            else:
+                                ht_single_pmid_ann[ht] = {}
+                        ht_pmid_ann = ht_single_pmid_ann
+                    idname_key_ht_pmid_ann[idname][key] = ht_pmid_ann
+
+                # make ann_set from ann_list
+                ht_pmid_ann = {
+                    ht: {
+                        pmid: set(tuple(ann) for ann in ann_list)
+                        for pmid, ann_list in pmid_to_ann.items()
+                    }
+                    for ht, pmid_to_ann in ht_pmid_ann.items()
+                }
+                return ht_pmid_ann
+
+        else:
+            assert False
+
+    def query_pmid_to_annotation_list(self, e1_spec, e2_spec, pmid):
+        """
+
+        :param e1_spec: ...
+        :param e2_spec: None / (
+            "OR",
+            ("type_id", ("VARIANT", "RS#:113488022")),
+            (
+                "AND",
+                ("type_id", ("ProteinMutation", "HGVS:p.V600E")),
+                ("type_id", ("CorrespondingGene", "673")),
+            ),
+        )
+        :param pmid: None / str
+        :return: {
+            "head": ...
+            "tail": [
+                pmid: [(annotation_file_offset, annotation_score), ...],
+                ...
+            ]
+        }
+        """
+
+        if e1_spec and e2_spec:
+            e1_ht_pmid_annset = self.query_ht_pmid_annset_by_entity(e1_spec, pmid)
+            e2_ht_pmid_annset = self.query_ht_pmid_annset_by_entity(e2_spec, pmid)
+
+            h1t2_pmid_annset = intersection_of_key_to_set([
+                e1_ht_pmid_annset["head"], e2_ht_pmid_annset["tail"],
+            ])
+            h2t1_pmid_annset = intersection_of_key_to_set([
+                e1_ht_pmid_annset["tail"], e2_ht_pmid_annset["head"],
+            ])
+            del e1_ht_pmid_annset, e2_ht_pmid_annset
+
+            pmid_to_ann = union_of_key_to_set([h1t2_pmid_annset, h2t1_pmid_annset])
+            del h1t2_pmid_annset, h2t1_pmid_annset
+            pmid_to_ann = {
+                pmid: sorted(ann_set)
+                for pmid, ann_set in pmid_to_ann.items()
+            }
+
+        elif e1_spec or e2_spec:
+            entity_spec = e1_spec if e1_spec else e2_spec
+            ht_pmid_annset = self.query_ht_pmid_annset_by_entity(entity_spec, pmid)
+            pmid_to_ann = union_of_key_to_set([ht_pmid_annset["head"], ht_pmid_annset["tail"]])
+            pmid_to_ann = {
+                pmid: sorted(ann_set)
+                for pmid, ann_set in pmid_to_ann.items()
+            }
+
+        else:
+            pmid_to_ann = {pmid: self.query_annotation_list_by_pmid(pmid)}
+
+        return pmid_to_ann
 
 
 def get_normalized_journal_name(name):
@@ -512,34 +754,109 @@ def test_kb(kb_dir):
     kb = KB(kb_dir)
     kb.load_data()
     kb.load_index()
-    input("YOLO")
 
-    head = ("Chemical", "MESH:D001639", "bicarbonate")
-    tail = ("Disease", "MESH:D000138", "metabolic acidosis")
-    evidence_list = kb.get_evidence_ids_by_pair((head, tail))
-    evidence_list = [kb.get_evidence_by_id(_id) for _id in evidence_list]
-    evidences = len(evidence_list)
-    logger.info(f"{evidences:,} evidences")
-    for evidence in evidence_list:
-        logger.info(evidence)
+    """
+    query_list = [
+        [
+            ["type_id", ["VARIANT", "HGVS:p.V600E"]],
+            None,
+            "35246262",
+        ],
+        [
+            None,
+            ["type_name", ["Disease", "tumor"]],
+            "35246262",
+        ],
+        (
+            ["AND", [
+                ["type_id", ["Chemical", "MESH:D001639"]],
+                ["type_name", ["Chemical", "bicarbonate"]],
+            ]],
+            ("AND", (
+                ("type_id", ("Disease", "MESH:D000138")),
+                ("type_name", ("Disease", "metabolic acidosis")),
+            )),
+            "35387196",
+        ),
+        (
+            ("AND", (
+                ("type_id", ("ProteinMutation", "HGVS:p.V600E")),
+                ("type_id", ("ProteinMutation", "CorrespondingGene:673")),
+            )),
+            ("type_id", ("Disease", "MESH:D009369")),
+            "35373151",
+        ),
+        (
+            ("type_id", ("VARIANT", "RS#:113488022")),
+            ("type_id", ("Disease", "MESH:D009369")),
+            "35373151",
+        ),
+        (
+            ("OR", (
+                ("AND", (
+                    ("type_id", ("ProteinMutation", "HGVS:p.V600E")),
+                    ("type_id", ("ProteinMutation", "CorrespondingGene:673")),
+                )),
+                ("type_id", ("VARIANT", "RS#:113488022"))
+            )),
+            ("type_id", ("Disease", "MESH:D009369")),
+            "35373151",
+        ),
+    ]
+    """
+    query_list = [
+        (
+            ("type_id", ("VARIANT", "HGVS:p.V600E")),
+            ("type_id", ("Disease", "MESH:D009369")),
+            "35373151",
+        ),
+        (
+            ("type_id", ("VARIANT", "HGVS:c.1799T>A")),
+            ("type_id", ("Disease", "MESH:D009369")),
+            "35373151",
+        ),
+        (
+            ("AND", (
+                ("OR", (
+                    ("type_id", ("VARIANT", "HGVS:p.V600E")),
+                    ("type_id", ("VARIANT", "HGVS:c.1799T>A")),
+                )),
+                ("type_id", ("VARIANT", "CorrespondingGene:673"))
+            )),
+            ("type_id", ("Disease", "MESH:D009369")),
+            "35373151",
+        ),
+    ]
 
-    head = ("Chemical", "MESH:D001639")
-    tail = ("Disease", "MESH:D000138")
-    evidence_list = kb.get_evidence_ids_by_pair((head, tail), key=("type_id", "type_id"))
-    evidence_list = [kb.get_evidence_by_id(_id) for _id in evidence_list]
-    evidences = len(evidence_list)
-    logger.info(f"{evidences:,} evidences")
-    for evidence in evidence_list:
-        logger.info(evidence)
+    for e1_spec, e2_spec, pmid_spec in query_list:
+        logger.info("=" * 100)
+        logger.info(f"e1_spec={e1_spec}")
+        logger.info(f"e2_spec={e2_spec}")
+        logger.info(f"pmid_spec={pmid_spec}")
 
-    head = ("Chemical", "bicarbonate")
-    tail = ("Disease", "metabolic acidosis")
-    evidence_list = kb.get_evidence_ids_by_pair((head, tail), key=("type_name", "type_name"))
-    evidence_list = [kb.get_evidence_by_id(_id) for _id in evidence_list]
-    evidences = len(evidence_list)
-    logger.info(f"{evidences:,} evidences")
-    for evidence in evidence_list:
-        logger.info(evidence)
+        pmid_to_ann = kb.query_pmid_to_annotation_list(e1_spec, e2_spec, pmid_spec)
+        pmids = len(pmid_to_ann)
+        annotations = sum(len(ann_list) for ann_list in pmid_to_ann.values())
+        logger.info(f"{pmids:,} pmids; {annotations:,} annotations")
+
+        pmid_to_relevance = {
+            pmid: sum(ann_score for _ann_offset, ann_score in ann_list)
+            for pmid, ann_list in pmid_to_ann.items()
+        }
+        pmid_list = sorted(pmid_to_ann, key=lambda pmid: pmid_to_relevance[pmid], reverse=True)
+
+        for pmid in pmid_list:
+            relevance = pmid_to_relevance[pmid]
+            logger.info("-" * 100)
+            logger.info(f"pmid={pmid} relevance={relevance:,}")
+            for ann_offset, _ann_score in pmid_to_ann[pmid]:
+                annotation = kb.get_annotation(ann_offset)
+                sentence, mention_list = kb.get_sentence(annotation[0])
+                logger.info(f"sentence   -> {sentence}")
+                logger.info(f"mentions   -> {mention_list}")
+                logger.info(f"annotation -> {annotation}")
+                logger.info("")
+        input("YOLO")
     return
 
 
@@ -557,10 +874,10 @@ def test_meta(meta_dir):
 def main():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--kb_dir", type=str, default="pubmedKB-PTC/1_319_disk")
+    parser.add_argument("--kb_dir", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator_2023/kb/1_10")
 
-    parser.add_argument("--variant_dir", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/data/variant")
-    parser.add_argument("--gene_dir", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/data/gene")
+    parser.add_argument("--variant_dir", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator_2023/data/variant")
+    parser.add_argument("--gene_dir", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator_2023/data/gene")
 
     parser.add_argument("--meta_dir", type=str, default="/volume/penghsuanli-genome2-nas2/pubtator/data/meta")
 
@@ -572,7 +889,7 @@ def main():
     # test_nen(arg.kb_dir)
     # test_v2g(arg.variant_dir, arg.gene_dir)
     # test_kb(arg.kb_dir)
-    test_meta(arg.meta_dir)
+    # test_meta(arg.meta_dir)
     return
 
 

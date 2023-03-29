@@ -1,26 +1,76 @@
-function run_query(){
+function get_entity_spec(filter, _type, _id, name) {
+    if (filter == "type_id") {
+        query = ["type_id", [_type, _id]]
+    } else if (filter == "type_name") {
+        query = ["type_name", [_type, name]]
+    } else if (filter == "type_id_name") {
+        query = ["AND", [["type_id", [_type, _id]], ["type_name", [_type, name]]]]
+    }
+    query = JSON.stringify(query)
+    return query
+}
+
+
+function get_query_spec() {
+    e1_filter = document.getElementById("sl_e1_filter").value
+    e1_type = document.getElementById("sl_e1_type").value
+    e1_id = document.getElementById("ta_e1_id").value
+    e1_name = document.getElementById("ta_e1_name").value
+
+    e2_filter = document.getElementById("sl_e2_filter").value
+    e2_type = document.getElementById("sl_e2_type").value
+    e2_id = document.getElementById("ta_e2_id").value
+    e2_name = document.getElementById("ta_e2_name").value
+
+    pmid = document.getElementById("ta_query_pmid").value
+
+    query_filter = document.getElementById("sl_query_filter").value
+
+    if (query_filter == "P") {
+        e1_spec = ""
+        e2_spec = ""
+
+    } else if (query_filter == "A") {
+        e1_spec = get_entity_spec(e1_filter, e1_type, e1_id, e1_name)
+        e2_spec = ""
+        pmid = ""
+
+    } else if (query_filter == "B") {
+        e1_spec = ""
+        e2_spec = get_entity_spec(e2_filter, e2_type, e2_id, e2_name)
+        pmid = ""
+
+    } else if (query_filter == "AB") {
+        e1_spec = get_entity_spec(e1_filter, e1_type, e1_id, e1_name)
+        e2_spec = get_entity_spec(e2_filter, e2_type, e2_id, e2_name)
+        pmid = ""
+
+    } else if (query_filter == "ABP") {
+        e1_spec = get_entity_spec(e1_filter, e1_type, e1_id, e1_name)
+        e2_spec = get_entity_spec(e2_filter, e2_type, e2_id, e2_name)
+    }
+
+    query_spec = [e1_spec, e2_spec, pmid]
+    return query_spec
+}
+
+
+function run_query() {
     document.getElementById("div_status").innerHTML = "Loading...";
 
+    query_spec = get_query_spec()
+    e1_spec = query_spec[0]
+    e2_spec = query_spec[1]
+    pmid = query_spec[2]
+
     request_data = {
-        "e1_filter": document.getElementById("sl_e1_filter").value,
-        "e1_type": document.getElementById("sl_e1_type").value,
-        "e1_id": document.getElementById("ta_e1_id").value,
-        "e1_name": document.getElementById("ta_e1_name").value,
-
-        "e2_filter": document.getElementById("sl_e2_filter").value,
-        "e2_type": document.getElementById("sl_e2_type").value,
-        "e2_id": document.getElementById("ta_e2_id").value,
-        "e2_name": document.getElementById("ta_e2_name").value,
-
-        "query_pmid": document.getElementById("ta_query_pmid").value,
-        "query_filter": document.getElementById("sl_query_filter").value,
-
-        "kb_start": document.getElementById("ta_kb_start").value,
-        "kb_end": document.getElementById("ta_kb_end").value,
+        "e1_spec": e1_spec,
+        "e2_spec": e2_spec,
+        "pmid": pmid,
         "paper_start": document.getElementById("ta_paper_start").value,
         "paper_end": document.getElementById("ta_paper_end").value,
         "paper_sort": document.getElementById("sl_paper_sort").value,
-    };
+    }
 
     fetch("./run_rel", {method: "post", body: JSON.stringify(request_data)})
     .then(function(response){
@@ -32,52 +82,29 @@ function run_query(){
     })
 }
 
-function get_json(){
-    e1_filter = document.getElementById("sl_e1_filter").value,
-    e1_type = document.getElementById("sl_e1_type").value,
-    e1_id = document.getElementById("ta_e1_id").value,
-    e1_name = document.getElementById("ta_e1_name").value,
-    e2_filter = document.getElementById("sl_e2_filter").value,
-    e2_type = document.getElementById("sl_e2_type").value,
-    e2_id = document.getElementById("ta_e2_id").value,
-    e2_name = document.getElementById("ta_e2_name").value,
-    query_pmid = document.getElementById("ta_query_pmid").value,
-    query_filter = document.getElementById("sl_query_filter").value,
-    kb_start = document.getElementById("ta_kb_start").value,
-    kb_end = document.getElementById("ta_kb_end").value,
-    paper_start = document.getElementById("ta_paper_start").value,
-    paper_end = document.getElementById("ta_paper_end").value,
-    paper_sort = document.getElementById("sl_paper_sort").value,
 
-    e1_filter = encodeURI(e1_filter)
-    e1_type = encodeURI(e1_type)
-    e1_id = encodeURI(e1_id)
-    e1_name = encodeURI(e1_name)
-    e2_filter = encodeURI(e2_filter)
-    e2_type = encodeURI(e2_type)
-    e2_id = encodeURI(e2_id)
-    e2_name = encodeURI(e2_name)
-    query_pmid = encodeURI(query_pmid)
-    query_filter = encodeURI(query_filter)
-    kb_start = encodeURI(kb_start)
-    kb_end = encodeURI(kb_end)
+function get_json() {
+    query_spec = get_query_spec()
+    e1_spec = query_spec[0]
+    e2_spec = query_spec[1]
+    pmid = query_spec[2]
+
+    paper_start = document.getElementById("ta_paper_start").value
+    paper_end = document.getElementById("ta_paper_end").value
+    paper_sort = document.getElementById("sl_paper_sort").value
+
+    e1_spec = encodeURI(e1_spec)
+    e2_spec = encodeURI(e2_spec)
+    pmid = encodeURI(pmid)
+
     paper_start = encodeURI(paper_start)
     paper_end = encodeURI(paper_end)
     paper_sort = encodeURI(paper_sort)
 
     url = `./query_rel`
-    url = `${url}?e1_filter=${e1_filter}`
-    url = `${url}&e1_type=${e1_type}`
-    url = `${url}&e1_id=${e1_id}`
-    url = `${url}&e1_name=${e1_name}`
-    url = `${url}&e2_filter=${e2_filter}`
-    url = `${url}&e2_type=${e2_type}`
-    url = `${url}&e2_id=${e2_id}`
-    url = `${url}&e2_name=${e2_name}`
-    url = `${url}&query_pmid=${query_pmid}`
-    url = `${url}&query_filter=${query_filter}`
-    url = `${url}&kb_start=${kb_start}`
-    url = `${url}&kb_end=${kb_end}`
+    url = `${url}?e1_spec=${e1_spec}`
+    url = `${url}&e2_spec=${e2_spec}`
+    url = `${url}&pmid=${pmid}`
     url = `${url}&paper_start=${paper_start}`
     url = `${url}&paper_end=${paper_end}`
     url = `${url}&paper_sort=${paper_sort}`
@@ -85,55 +112,21 @@ function get_json(){
     window.open(url, "_blank");
 }
 
-function get_statistics_json(){
-    e1_filter = document.getElementById("sl_e1_filter").value,
-    e1_type = document.getElementById("sl_e1_type").value,
-    e1_id = document.getElementById("ta_e1_id").value,
-    e1_name = document.getElementById("ta_e1_name").value,
-    e2_filter = document.getElementById("sl_e2_filter").value,
-    e2_type = document.getElementById("sl_e2_type").value,
-    e2_id = document.getElementById("ta_e2_id").value,
-    e2_name = document.getElementById("ta_e2_name").value,
-    query_pmid = document.getElementById("ta_query_pmid").value,
-    query_filter = document.getElementById("sl_query_filter").value,
-    kb_start = document.getElementById("ta_kb_start").value,
-    kb_end = document.getElementById("ta_kb_end").value,
-    paper_start = document.getElementById("ta_paper_start").value,
-    paper_end = document.getElementById("ta_paper_end").value,
-    paper_sort = document.getElementById("sl_paper_sort").value,
 
-    e1_filter = encodeURI(e1_filter)
-    e1_type = encodeURI(e1_type)
-    e1_id = encodeURI(e1_id)
-    e1_name = encodeURI(e1_name)
-    e2_filter = encodeURI(e2_filter)
-    e2_type = encodeURI(e2_type)
-    e2_id = encodeURI(e2_id)
-    e2_name = encodeURI(e2_name)
-    query_pmid = encodeURI(query_pmid)
-    query_filter = encodeURI(query_filter)
-    kb_start = encodeURI(kb_start)
-    kb_end = encodeURI(kb_end)
-    paper_start = encodeURI(paper_start)
-    paper_end = encodeURI(paper_end)
-    paper_sort = encodeURI(paper_sort)
+function get_statistics_json() {
+    query_spec = get_query_spec()
+    e1_spec = query_spec[0]
+    e2_spec = query_spec[1]
+    pmid = query_spec[2]
+
+    e1_spec = encodeURI(e1_spec)
+    e2_spec = encodeURI(e2_spec)
+    pmid = encodeURI(pmid)
 
     url = `./query_rel_statistics`
-    url = `${url}?e1_filter=${e1_filter}`
-    url = `${url}&e1_type=${e1_type}`
-    url = `${url}&e1_id=${e1_id}`
-    url = `${url}&e1_name=${e1_name}`
-    url = `${url}&e2_filter=${e2_filter}`
-    url = `${url}&e2_type=${e2_type}`
-    url = `${url}&e2_id=${e2_id}`
-    url = `${url}&e2_name=${e2_name}`
-    url = `${url}&query_pmid=${query_pmid}`
-    url = `${url}&query_filter=${query_filter}`
-    url = `${url}&kb_start=${kb_start}`
-    url = `${url}&kb_end=${kb_end}`
-    url = `${url}&paper_start=${paper_start}`
-    url = `${url}&paper_end=${paper_end}`
-    url = `${url}&paper_sort=${paper_sort}`
+    url = `${url}?e1_spec=${e1_spec}`
+    url = `${url}&e2_spec=${e2_spec}`
+    url = `${url}&pmid=${pmid}`
 
     window.open(url, "_blank");
 }

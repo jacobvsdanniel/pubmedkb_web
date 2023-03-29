@@ -79,7 +79,6 @@ def gen_summary_input (detailed_evidence):
             for l in openie_ungrouped:
                 d.setdefault(l['sentence_id'], []).append(l)
             d_list_sorted = sorted(d.items(), key=lambda l: len(l[1]),reverse=True)
-            logger.info(d_list_sorted)
             for i in range (0, len(d_list_sorted)):
                 if len(ore_sorted)<2:
                     e=d_list_sorted[i][1][0]
@@ -136,11 +135,9 @@ def gen_summary_by_entity_pmid(kb,evidence_id_list,target):
                     mention2 = odds_sorted["head"][2]
             elif target[0] == "type_id":
                 if target[1][1] in odds_sorted["head"]:
-                    logger.info("inside second loop h")
                     mention1 = odds_sorted["head"][1]
                     mention2 = odds_sorted["tail"][2]
                 elif target[1][1] in odds_sorted["tail"]:
-                    logger.info("inside second loop t")
                     mention1= odds_sorted["tail"][1]
                     mention2=odds_sorted["head"][2]
             sent1 = "The odds ratio found between " + mention1 + " and " + mention2+ " is " + str(odds_sorted["annotation"][0]) + " (CI: " + str(odds_sorted["annotation"][1]) + ", p-value: "+  str(odds_sorted["annotation"][2])+ "). "
@@ -558,16 +555,11 @@ def gen_summary_by_pair(kb,evidence_id_list,target):
         mention1=""
         mention2=""
         if odds_sorted:
-            logger.info("target100")
-            print(target)
-            print(odds_sorted["head"])
             if target[0] == "type_id_name" or target[0] == "type_name":
                 if target[1][2] in odds_sorted["head"]:
                     mention1 = odds_sorted["head"][2]
                 elif target[1][2] in odds_sorted["tail"]:
                     mention1 = odds_sorted["tail"][2]
-                logger.info("mention1_name00")
-                print(mention1)
             if target[0] == "type_id" :
                 if target[1][1] in odds_sorted["head"]:
                     mention1 = odds_sorted["head"][1]
@@ -578,18 +570,11 @@ def gen_summary_by_pair(kb,evidence_id_list,target):
                     mention2 = odds_sorted["head"][2]
                 elif target[3][2] in odds_sorted["tail"]:
                     mention2= odds_sorted["tail"][2]
-                logger.info("mention2_name")
-                print(mention2)
             if target[2] == "type_id" :
                 if target[3][1] in odds_sorted["head"]:
                     mention2 = odds_sorted["head"][1]
                 elif target[3][1] in odds_sorted["tail"]:
                     mention2 = odds_sorted["tail"][1]
-                logger.info("mention2_name")
-                print(mention2)
-            logger.info("beforesent")
-            print(mention1)
-            print(mention2)
             sent1 = "The odds ratio found between " + mention1 + " and " + mention2+ " in PMID: " + str(odds_sorted["pmid"]) + " is " + str(odds_sorted["annotation"][0]) + " (CI: " + str(odds_sorted["annotation"][1]) + ", p-value: "+  str(odds_sorted["annotation"][2])+ "). "
             sent2 = mention1+ " and " + mention2 + " have an " + str(odds_sorted["annotation"][0])  + " (CI: " + str(odds_sorted["annotation"][1]) + ", p-value: "+  str(odds_sorted["annotation"][2]) + ")"+" odds ratio (PMID: " + str(odds_sorted["pmid"]) + "). "
             sent10 = "The odds ratio found between " + "<span style='color:#21d59b;font-weight:bold'>" + html.escape(mention1) + "</span>" + " and " + "<span style='color:#21d59b;font-weight:bold'>"+ html.escape(mention2)+ "</span>"+ " in PMID: " + html.escape(str(odds_sorted["pmid"])) + " is " + "<mark style='background-color:#62e0b84d'>" + html.escape(str(odds_sorted["annotation"][0])) + " (CI: " + html.escape(str(odds_sorted["annotation"][1])) + ", p-value: "+  html.escape(str(odds_sorted["annotation"][2]))+ ")." + "</mark>" + " "
@@ -736,9 +721,6 @@ def gen_summary_by_pair(kb,evidence_id_list,target):
         final_summary = ''.join(str(v) for v in summary)
         final_summary_ht=list(intro_list2)+list(odds_list2)+list(rbert_list2)+list(triplet_list2)
         final_summary_ht = ''.join(str(v) for v in final_summary_ht)
-        logger.info("summary for single pair")
-        print(final_summary)
-        print(final_summary_ht)
         return tuple([final_summary,final_summary_ht])
     else:
         final_summary = "There are not enough information for generating a substantial summary for this pair. Please view the following table or re-enter the entity."
@@ -888,7 +870,6 @@ def gen_summary_by_pmid(kb,evidence_id_list,target):
         intro_list2=random.choice(intro_list2)
         final_summary_ht=list(intro_list2)+list(odds_list2)+list(rbert_list2)+list(triplet_list2)
         final_summary_ht = ''.join(str(v) for v in final_summary_ht)
-        logger.info("summary for single pmid: 22494505")
         return tuple([final_summary,final_summary_ht])
     else:
         final_summary = "There are not enough information for generating a substantial summary for this PMID. Please view the following table or re-enter the entity."
@@ -947,8 +928,6 @@ def gen_summary_by_pmid_pair(kb,evidence_id_list,target):
                     mention1 = odds_sorted["head"][2]
                 elif target[1][2] in odds_sorted["tail"]:
                     mention1 = odds_sorted["tail"][2]
-                logger.info("mention1_name00")
-                print(mention1)
             if target[0] == "type_id" :
                 if target[1][1] in odds_sorted["head"]:
                     mention1 = odds_sorted["head"][1]
@@ -959,8 +938,6 @@ def gen_summary_by_pmid_pair(kb,evidence_id_list,target):
                     mention2 = odds_sorted["head"][2]
                 elif target[3][2] in odds_sorted["tail"]:
                     mention2= odds_sorted["tail"][2]
-                logger.info("mention2_name")
-                print(mention2)
             if target[2] == "type_id" :
                 if target[3][1] in odds_sorted["head"]:
                     mention2 = odds_sorted["head"][1]
@@ -1111,16 +1088,14 @@ def gen_summary_by_pmid_pair(kb,evidence_id_list,target):
         intro_list=random.choice(intro_list)
         summary=list(intro_list)+list(odds_list)+list(rbert_list)+list(triplet_list)
         final_summary = ''.join(str(v) for v in summary)
-        logger.info("summary for pmid and single pair: rs4925 & MESH:D012871 & 29323258")
         intro_list2=[sent10,sent20, sent30]
         intro_list2=random.choice(intro_list2)
         final_summary_ht=list(intro_list2)+list(odds_list2)+list(rbert_list2)+list(triplet_list2)
         final_summary_ht = ''.join(str(v) for v in final_summary_ht)
-        logger.info("summary for pmid and single pair: rs4925 & MESH:D012871 & 29323258")
         return tuple([final_summary,final_summary_ht])
     else:
         final_summary = "There are not enough information for generating a substantial summary for this PMID and pair. Please view the following table or re-enter the entity."
-        final_summary_ht = html.escape("There are not enough information for generating a substantial summary for this PMID. Please view the following table or re-enter the PMID.")
+        final_summary_ht = html.escape("There are not enough information for generating a substantial summary for this PMID and pair. Please view the following table or re-enter the PMID.")
         return tuple([final_summary,final_summary_ht])
 
 def get_summary (kb,evidence_id_list, target, query_filter):
