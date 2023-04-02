@@ -66,26 +66,22 @@ git checkout 2e79a4bbf4258c88dda1ddc7f4e4f3ee37443896
 | [pubmedKB-PTC-disk-small](https://drive.google.com/file/d/1EnrnGBkbrInu58bkoe9vSn-oRARWtbX0/view?usp=sharing) | 605 MB | 2.0 M | abstract | O | O |
 | [pubmedKB-PTC-FT-disk-small](https://drive.google.com/file/d/13Y5JWWAhbWRY5IiUu2D9b0JO31OjxECj/view?usp=sharing) | 781 MB | 336 K | full text | O | O |
 
-## Python API
-
-- [slides](https://github.com/jacobvsdanniel/pubmedkb_web/blob/main/pubmedKB_api.pdf)
-- [wiki](https://github.com/jacobvsdanniel/pubmedkb_web/wiki)
-- [demo.py](https://github.com/jacobvsdanniel/pubmedkb_web/blob/main/demo.py)
-
-## Web GUI
-
-#### Start server
+## GUI/API server
 
 ```bash
 python server.py \
 --variant_dir [variant_directory] \
 --gene_dir [gene_directory] \
---kb_dir [pubmedKB_directory] \
---kb_type [relation/cooccur] \
+--kb_dir [KB_directory] \
+--kb_type relation \
+--meta_dir [paper_meta_directory] \
 --port 8000
 ```
 
-#### Connect to server
+- Supports both HTTP GET and POST
+- Displays results on an HTML webpage or return a JSON file
 
-Open browser and connect to *[server_ip]:[server_port]*
+## GUI/API client
 
+- Open browser and connect to *[server_ip]:[server_port]*
+- Also check out [client.py](https://github.com/jacobvsdanniel/pubmedkb_web/blob/main/client.py)
