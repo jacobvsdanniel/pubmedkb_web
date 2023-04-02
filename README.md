@@ -33,20 +33,18 @@ Dependencies
 
 ## Datasets
 
-| Entity data | Disk size |
-| :-: | :-: |
-| [PTC-gene](https://drive.google.com/file/d/1wnnWVFagSE03kxbVZmfjGFbKQoE60IRG)    | 62 MB |
-| [PTC-variant](https://drive.google.com/file/d/1XOvz4kqEhXlLZIS499avMi5DRqpvwgN7) | 26 MB |
+| Support data | content | Disk size (zip size) |
+| :-: | :-: | :-: |
+| [gene](https://drive.google.com/file/d/1OX629I7fS_mvPbJ_AgQvPUhZ9MX6XWxA/view?usp=share_link) | id, name correspondence | 226 MB (52 MB) |
+| [variant](https://drive.google.com/file/d/1Uf74lZHYs4yB3bCmmyv3tjokoTfLAkLi/view?usp=share_link) | id, name, gene correspondence | 133 MB (28 MB) |
+| [paper](https://drive.google.com/file/d/17AUaMe0w3xJq3rr0Njs1tok2y3RS5tQ2/view?usp=sharing) | title, author, year, journal, citation, IF | 8.6 GB (1.6 GB) |
 
-| Full pubmedKB (limited access) | Annotation           | #papers | Section  | Disk size (zip size) | Memory usage |
+| Relation data | Relations           | # papers with relations* | Section  | Disk size (zip size) | Memory usage |
 | :-:                            | :-:                  | :-:     | :-:      | :-:                  | :-:          |
-| [pubmedKB-PTC-rel](https://drive.google.com/file/d/1JPwkkMD6NYdEiIGh6hWjaftlNaeGKlRE) | Entity relation | 10.8 M | Abstract | 13 GB (3 GB) | 6 GB |
-| pubmedKB-PTC-sent              | Entity co-occurrence | 19.4 M  | Abstract | 173 GB (29 GB)       | 14 GB        |
+| Full KB    | odds ratio, causal, open relations, etc. | 8.5 M | abstract | 12 GB (2.2 GB) | 15 GB |
+| [Partial KB](https://drive.google.com/file/d/14zmuFfNKcTwiSiJPlSUUCwuYJFbq_ouo/view?usp=sharing) | odds ratio, causal, open relations, etc. | 0.3 M | abstract | 485 MB (88 MB) | 10 GB |
 
-| Partial pubmedKB (open access) | Annotation | #papers | Section | Disk size (zip size) |
-| :-:                            | :-:        | :-:     | :-:     | :-:                  |
-| [pubmedKB-PTC-rel-small](https://drive.google.com/file/d/1RhxhtAqXPvfG7DrxU6EflwuMa_oC1JHC)  | Entity relation      | 1.9 M | Abstract | 2 GB (0.6 GB) |
-| [pubmedKB-PTC-sent-small](https://drive.google.com/file/d/1-l9oOj0ifnhMduhDkUG5BUpYQl8AcTj_) | Entity co-occurrence | 2.7 M | Abstract | 26 GB (4 GB)  |
+*We processed all 35M PubMed citations dumped on 2023/02/17.
 
 ## Deprecated Datasets
 
