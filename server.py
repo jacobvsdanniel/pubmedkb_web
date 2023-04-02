@@ -11,6 +11,7 @@ from collections import defaultdict
 from flask import Flask, render_template, request
 
 from kb_utils import query_variant, V2G, KB, Meta
+from summary_utils import Summary
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
@@ -439,7 +440,7 @@ class Paper:
                 mention_list = [
                     {
                         "name": name,
-                        "_type": _type,
+                        "type": _type,
                         "id": id_list,
                         "offset": pos,
                     }
@@ -501,6 +502,7 @@ class Paper:
         self.annotator_to_relation = annotator_to_relation
         return
 
+
 class Rel:
     def __init__(self, raw_arg):
         str_arg = {}
@@ -518,6 +520,9 @@ class Rel:
 
         self.paper_list = []
         self.statistics = {}
+
+        self.text_summary = {}
+        self.html_summary = ""
         return
 
     def run_pipeline(self):
@@ -527,6 +532,7 @@ class Rel:
         self.get_paper_relation()
         self.get_paper_meta()
         self.get_statistics()
+        self.get_summary()
         return
 
     def run_no_pagination_get_statistics_pipeline(self):
@@ -671,86 +677,43 @@ class Rel:
         logger.info(log[:-1])
         return
 
-    """
-    def _get_summary(self):
+    def get_summary(self):
         arg = self.arg
 
-        if kb_type == "relation":
-            summary_evidence_id_list = [
-                _id
-                for paper in self.paper_list
-                for _annotator, relation_list in paper.annotator_to_relation.items()
-                for relation in relation_list
-                for _id in relation["evidence_id"]
-            ]
-
-            entity_list, pmid_list = get_entity_and_pmid_relation_query(arg["query"])
-
-            if len(entity_list) >= 2:
-                entity_query = "AB"
-                entity_target = [*entity_list[0], *entity_list[1]]
-            elif len(entity_list) >= 1:
-                entity_query = "A"
-                entity_target = entity_list[:1]
-            else:
-                entity_query = ""
-                entity_target = tuple()
-
-            if len(pmid_list) >= 1:
-                pmid_query = "P"
-                pmid_target = pmid_list[:1]
-            else:
-                pmid_query = ""
-                pmid_target = tuple()
-
-            summary_query = entity_query + pmid_query
-            summary_target = (*entity_target, *pmid_target)
-            if len(summary_query) == 1:
-                summary_target = summary_target[0]
-            logger.info(f"summary_query={summary_query}")
-            logger.info(f"summary_target={summary_target}")
-
+        if kb_type == "relation" and self.paper_list:
             try:
-                summary_text, summary_html = get_summary(kb, summary_evidence_id_list, summary_target, summary_query)
-                assert isinstance(summary_text, str)
-                assert summary_text
-                assert isinstance(summary_html, str)
-                assert summary_html
+                summary = Summary(self.paper_list, arg["e1_spec"], arg["e2_spec"], arg["pmid"])
+                summary.run_pipeline()
+                text_summary = summary.text_summary
+                html_summary = summary.html_summary
+                logger.info("[summary] created")
             except Exception:
                 traceback.print_exc()
-                summary_text = "No summary."
-                summary_html = html.escape(summary_text)
-        else:
-            summary_text = "No summary."
-            summary_html = html.escape(summary_text)
+                text_summary = {
+                    "text": "No summary.",
+                    "term_to_span": {},
+                }
+                html_summary = html.escape(text_summary["text"])
 
-        summary_html = \
+        else:
+            text_summary = {
+                "text": "No summary.",
+                "term_to_span": {},
+            }
+            html_summary = html.escape(text_summary["text"])
+
+        html_summary = \
             "<div style='font-size: 15px; color: #131523; line-height: 200%'>" \
             "<span style='font-size: 17px'> " \
             "Summary" \
             "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
-            "<span style='font-size: 13px; font-weight:bold'> " \
-            "&mdash; target query" \
-            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
-            "<span style='font-size: 13px; font-weight:bold; color: #f99600'>" \
-            "&mdash; selected related mentions" \
-            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
-            "<span style='font-size: 13px; font-weight:bold; color: #21d59b; background-color: #62e0b84d'>" \
-            " &mdash; odds_ratio " \
-            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
-            "<span style='font-size: 13px; font-weight:bold; color: #0058ff; background-color: #5f96ff4d'>" \
-            " &mdash; rbert_cre " \
-            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" \
-            "<span style='font-size: 13px; font-weight:bold; color: #ff8389; background-color: #ff83894d'>" \
-            " &mdash; spacy_ore / openie_ore " \
-            "</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br />" \
-            + summary_html \
+            + html_summary \
             + "</div>"
 
-        self.summary_text = summary_text
-        self.summary_html = summary_html
+        self.text_summary = text_summary
+        self.html_summary = html_summary
         return
-    """
+
 
 @app.route("/run_rel", methods=["POST"])
 def run_rel():
@@ -815,13 +778,13 @@ def run_rel():
 
                 for mi in h_list:
                     mention = mention_list[mi]
-                    head_type.add(mention["_type"])
+                    head_type.add(mention["type"])
                     head_name.add(mention["name"])
                     for _id in mention["id"]:
                         head_id.add(_id)
                 for mi in t_list:
                     mention = mention_list[mi]
-                    tail_type.add(mention["_type"])
+                    tail_type.add(mention["type"])
                     tail_name.add(mention["name"])
                     for _id in mention["id"]:
                         tail_id.add(_id)
@@ -885,7 +848,9 @@ def run_rel():
 
     # combined html
     result = \
-        statistics_table_html \
+        rel.html_summary \
+        + "<br /><br />" \
+        + statistics_table_html \
         + "<br /><br />" \
         + relation_table_html \
         + "<br /><br /><br /><br /><br /><br /><br /><br /><br /><br />"
@@ -905,6 +870,10 @@ def query_rel():
 
     response = {
         "url_argument": rel.str_arg,
+        "summary": {
+            "text_summary": rel.text_summary,
+            "html_summary": rel.html_summary,
+        },
         "result_statistics": rel.statistics,
         "paper_list": [
             {

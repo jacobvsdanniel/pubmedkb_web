@@ -1,1169 +1,1029 @@
-import random
+import csv
 import sys
+import html
+import heapq
+import random
 import logging
 import argparse
-import html
 from collections import defaultdict
-# from kb_utils import KB
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    format="%(asctime)s - %(name)s - %(message)s",
     datefmt="%Y/%m/%d %H:%M:%S",
     level=logging.INFO,
 )
+csv.register_dialect(
+    "csv", delimiter=",", quoting=csv.QUOTE_MINIMAL, quotechar='"', doublequote=True,
+    escapechar=None, lineterminator="\n", skipinitialspace=False,
+)
+cre_label_to_weight = {
+    "Cause-associated": 3,
+    "In-patient": 2,
+    "Appositive": 1,
+}
+template_type_to_list = {
+    "X": [
+        [
+            [],
+            [
+                "",
+            ],
+        ],
+    ],
+    "query_ABP": [
+        [
+            ["entity1", "entity2", "pmid"],
+            [
+                "Based on our search results, relation exists between ",
+                " and ",
+                " in PMID: ",
+                ".",
+            ],
+        ],
+        [
+            ["entity1", "entity2", "pmid"],
+            [
+                "Relations occur between ",
+                " and ",
+                " as shown from our search for PMID: ",
+                ".",
+            ],
+        ],
+        [
+            ["entity1", "entity2", "pmid"],
+            [
+                "",
+                " and ",
+                " relate to each other in PMID: ",
+                ".",
+            ],
+        ],
+    ],
+    "query_AP": [
+        [
+            ["pmid", "entity"],
+            [
+                "Based on our search results, in PMID: ",
+                ", relation exists for ",
+                ".",
+            ],
+        ],
+        [
+            ["pmid", "entity"],
+            [
+                "From PMID: ",
+                ", relation exists for ",
+                ".",
+            ],
+        ],
+        [
+            ["entity", "pmid"],
+            [
+                "We found relations for ",
+                " in PMID: ",
+                ".",
+            ],
+        ],
+    ],
+    "query_P": [
+        [
+            ["pmid"],
+            [
+                "PMID: ",
+                " shows the following relations.",
+            ],
+        ],
+        [
+            ["pmid"],
+            [
+                "In PMID: ",
+                ", our search results find these relations.",
+            ],
+        ],
+        [
+            ["pmid"],
+            [
+                "For PMID: ",
+                ", some relations are extracted.",
+            ],
+        ],
+    ],
+    "query_AB": [
+        [
+            ["entity1", "entity2"],
+            [
+                "Based on our search results, relation exists between ",
+                " and ",
+                ".",
+            ],
+        ],
+        [
+            ["entity1", "entity2"],
+            [
+                "Relations occur between ",
+                " and ",
+                " as shown from our search. The exact sources are demonstrated by PMID.",
+            ],
+        ],
+        [
+            ["entity1", "entity2"],
+            [
+                "",
+                " and ",
+                " relate to each other in the following ways.",
+            ],
+        ],
+    ],
+    "query_A": [
+        [
+            ["entity"],
+            [
+                "Based on our search results, relation exists for ",
+                ".",
+            ],
+        ],
+        [
+            ["entity"],
+            [
+                "",
+                " has the following relations.",
+            ],
+        ],
+        [
+            ["entity"],
+            [
+                "These relations are present in our search results for ",
+                ".",
+            ],
+        ],
+    ],
+    "odds_ratio_P": [
+        [
+            ["variant", "disease", "pmid", "OR", "CI", "p-value"],
+            [
+                "The odds ratio found between ",
+                " and ",
+                " in PMID: ",
+                " is ",
+                " (CI: ",
+                ", p-value: ",
+                ").",
+            ],
+        ],
+        [
+            ["variant", "disease", "OR", "CI", "p-value", "pmid"],
+            [
+                "",
+                " and ",
+                " have an ",
+                " odds ratio (CI: ",
+                ", p-value: ",
+                ") in PMID: ",
+                ".",
+            ],
+        ],
+    ],
+    "odds_ratio_X": [
+        [
+            ["variant", "disease", "OR", "CI", "p-value"],
+            [
+                "The odds ratio found between ",
+                " and ",
+                " is ",
+                " (CI: ",
+                ", p-value: ",
+                ").",
+            ],
+        ],
+        [
+            ["variant", "disease", "OR", "CI", "p-value"],
+            [
+                "",
+                " and ",
+                " have an ",
+                " odds ratio (CI: ",
+                ", p-value: ",
+                ").",
+            ],
+        ],
+    ],
+    "cre_cause_P": [
+        [
+            ["variant", "disease", "score", "pmid", "sentence"],
+            [
+                "We believe that there is a causal relationship between ",
+                " and ",
+                " with a confidence of ",
+                ". Here is an excerpt of the literature (PMID: ",
+                ") that captures the relation: \"",
+                "\".",
+            ],
+        ],
+        [
+            ["score", "variant", "disease", "pmid", "sentence"],
+            [
+                "With a confidence of ",
+                ", we found that ",
+                " is a causal variant of ",
+                ". This piece of relation is evidenced by the sentence in PMID: ",
+                ": \"",
+                "\".",
+            ],
+        ],
+        [
+            ["pmid", "sentence", "variant", "disease", "score"],
+            [
+                "Based on the sentence (PMID: ",
+                "): \"",
+                "\". Our finding indicates that ",
+                " is associated with ",
+                " by a confidence of ",
+                ".",
+            ],
+        ],
+    ],
+    "cre_cause_X": [
+        [
+            ["variant", "disease", "score", "sentence"],
+            [
+                "We believe that there is a causal relationship between ",
+                " and ",
+                " with a confidence of ",
+                ". Here is an excerpt in the paper that captures the relation: \"",
+                "\".",
+            ],
+        ],
+        [
+            ["score", "variant", "disease", "sentence"],
+            [
+                "With a confidence of ",
+                ", we found that ",
+                " is a causal variant of ",
+                ". This piece of relation is evidenced by the sentence: \"",
+                "\".",
+            ],
+        ],
+        [
+            ["sentence", "variant", "disease", "score"],
+            [
+                "Based on the sentence: \"",
+                "\". Our finding indicates that ",
+                " is associated with ",
+                " by a confidence of ",
+                ".",
+            ],
+        ],
+    ],
+    "cre_patient_P": [
+        [
+            ["varaint", "disease", "score", "pmid", "sentence"],
+            [
+                "",
+                " occurs in some ",
+                " patients. Our finding shows that the confidence of this association is approximately ",
+                ". Here is an excerpt of the literature (PMID: ",
+                ") that captures the relation: \"",
+                "\".",
+            ],
+        ],
+        [
+            ["score", "disease", "variant", "pmid", "sentence"],
+            [
+                "With a confidence of ",
+                ", we found that ",
+                " patients carry ",
+                ". This is evidenced by the following sentence in PMID ",
+                ". \"",
+                "\"",
+            ],
+        ],
+        [
+            ["pmid", "sentence", "score", "disease", "variant"],
+            [
+                "As claimed by (PMID: ",
+                ") \"",
+                "\", we are ",
+                " sure that ",
+                " patients show to have ",
+                ".",
+            ],
+        ],
+    ],
+    "cre_patient_X": [
+        [
+            ["varaint", "disease", "score", "sentence"],
+            [
+                "",
+                " occurs in some ",
+                " patients. Our finding shows that the confidence of this association is approximately ",
+                ". Here is an excerpt in the paper that captures the relation: \"",
+                "\".",
+            ],
+        ],
+        [
+            ["score", "disease", "variant", "pmid", "sentence"],
+            [
+                "With a confidence of ",
+                ", we found that ",
+                " patients carry ",
+                ". This is evidenced by the following sentence. \"",
+                "\"",
+            ],
+        ],
+        [
+            ["sentence", "score", "disease", "variant"],
+            [
+                "As claimed by \"",
+                "\", we are ",
+                " sure that ",
+                " patients show to have ",
+                ".",
+            ],
+        ],
+    ],
+    "cre_appositive_P": [
+        [
+            ["variant", "disease", "score", "pmid", "sentence"],
+            [
+                "",
+                "'s relation with ",
+                " is presupposed. We are ",
+                " confident about this association. Here is an excerpt of the literature (PMID: ",
+                ") that captures this: \"",
+                "\".",
+            ],
+        ],
+        [
+            ["score", "variant", "disease", "sentence", "pmid"],
+            [
+                "It is ",
+                " presupposed that ",
+                " is related to ",
+                " as evidenced by \"",
+                "\" (PMID: ",
+                ").",
+            ],
+        ],
+        [
+            ["sentence", "pmid", "score", "variant", "disease"],
+            [
+                "According to the sentence: \"",
+                "\" (PMID: ",
+                "), We are ",
+                " confident that the relation between ",
+                " and ",
+                " contains a presupposition.",
+            ],
+        ],
+    ],
+    "cre_appositive_X": [
+        [
+            ["variant", "disease", "score", "sentence"],
+            [
+                "",
+                "'s relation with ",
+                " is presupposed. We are ",
+                " confident about this association. Here is an excerpt in the paper that captures this: \"",
+                "\".",
+            ],
+        ],
+        [
+            ["score", "variant", "disease", "sentence"],
+            [
+                "It is ",
+                " presupposed that ",
+                " is related to ",
+                " as evidenced by \"",
+                "\".",
+            ],
+        ],
+        [
+            ["sentence", "score", "variant", "disease"],
+            [
+                "According to the sentence: \"",
+                "\", We are ",
+                " confident that the relation between ",
+                " and ",
+                " contains a presupposition.",
+            ],
+        ],
+    ],
+    "ore_2_P": [
+        [
+            ["triplet1", "pmid1", "triplet2", "pmid2"],
+            [
+                "Moreover, there are also open relations found between entities, which includes the following. \"",
+                "\" (PMID: ",
+                "). \"",
+                "\" (PMID: ",
+                ").",
+            ],
+        ],
+        [
+            ["triplet1", "pmid1", "triplet2", "pmid2"],
+            [
+                "Further relations are present, notably: \"",
+                "\" (PMID ",
+                ") and \"",
+                "\" (PMID ",
+                ").",
+            ],
+        ],
+        [
+            ["triplet1", "pmid1", "triplet2", "pmid2"],
+            [
+                "Between entities, prior literature also entails that \"",
+                "\" (PMID: ",
+                ") and \"",
+                "\" (PMID: ",
+                ").",
+            ],
+        ],
+    ],
+    "ore_2_X": [
+        [
+            ["triplet1", "triplet2"],
+            [
+                "Moreover, there are also open relations found between entities, which includes the following. \"",
+                "\". \"",
+                "\".",
+            ],
+        ],
+        [
+            ["triplet1", "triplet2"],
+            [
+                "Further relations are present, notably: \"",
+                "\" and \"",
+                "\".",
+            ],
+        ],
+        [
+            ["triplet1", "triplet2"],
+            [
+                "Between entities, prior literature also entails that \"",
+                "\" and \"",
+                "\".",
+            ],
+        ],
+    ],
+    "ore_1_P": [
+        [
+            ["triplet", "pmid"],
+            [
+                "We also found \"",
+                "\" (PMID: ",
+                ").",
+            ],
+        ],
+        [
+            ["triplet", "pmid"],
+            [
+                "\"",
+                "\" (PMID: ",
+                ").",
+            ],
+        ],
+        [
+            ["triplet", "pmid"],
+            [
+                "In addition, \"",
+                "\" (PMID: ",
+                ").",
+            ],
+        ],
+    ],
+    "ore_1_X": [
+        [
+            ["triplet"],
+            [
+                "We also found \"",
+                "\".",
+            ],
+        ],
+        [
+            ["triplet"],
+            [
+                "\"",
+                "\".",
+            ],
+        ],
+        [
+            ["triplet"],
+            [
+                "In addition, \"",
+                "\".",
+            ],
+        ],
+    ],
+}
+span_class_to_style = {
+    "query_entity": "font-weight: bold;",
+    "odds_ratio_entity": "font-weight: bold; color: #21d59b;",
+    "cre_entity": "font-weight: bold; color: #0058ff;",
+    "ore_entity": "font-weight: bold; color: #ff8389;",
+    "query": "",
+    "odds_ratio": "background-color: #62e0b84d;",
+    "cre": "background-color: #5f96ff4d;",
+    "ore": "background-color: #ff83894d;",
+}
 
-## organizing which ore/cre/odds to choose
-def gen_summary_input (detailed_evidence):
-    string_list = []
-    cre_sorted = []
-    odds_sorted = []
-    ore_sorted = []
-    cre_ungrouped =  [d for d in detailed_evidence if d["annotator"]=="rbert_cre"]
-    odds_ungrouped = [d for d in detailed_evidence if d["annotator"]=="odds_ratio"]
-    spacy_ungrouped = [d for d in detailed_evidence if d["annotator"]=="spacy_ore"]
-    openie_ungrouped = [d for d in detailed_evidence if d["annotator"]=="openie_ore"]
-    if odds_ungrouped:
-        if len(odds_ungrouped)==1:
-            odds_sorted=odds_ungrouped[0]
-        else:
-            for l in odds_ungrouped:
-                l["odds_ratio"]=l["annotation"][0]
-                if l["odds_ratio"] == "x":
-                    l["odds_ratio"] = "0"
-                l["odds_ratio"]=float(l["odds_ratio"])
-                l["odds_ratio_reciprocal"]=1/l["odds_ratio"]
-            odds_sorted = max(odds_ungrouped, key=lambda l: l['odds_ratio_reciprocal'])
-    if cre_ungrouped:
-        if len(cre_ungrouped)==1:
-            cre_sorted=cre_ungrouped[0]
-        else:
-            for l in cre_ungrouped:
-                l["rbert_type"]=l["annotation"][0]
-                l["rbert_value"]=l["annotation"][1]
-                l["rbert_value"]=float(l["rbert_value"].rstrip("%"))
-            sortorder={'Cause-associated':2, 'In-patient':1, 'Appositive':0}
-            cre_sorted=max(cre_ungrouped, key=lambda x: (sortorder[x["rbert_type"]], x['rbert_value']))
-    if len(spacy_ungrouped)>0:
-        if len(spacy_ungrouped) ==1:
-            s1=' '.join(spacy_ungrouped[0]["annotation"])
-            string_list.append(s1)
-            ore_sorted.append(spacy_ungrouped[0])
-        else:
-            d = {}
-            for l in spacy_ungrouped:
-                d.setdefault(l['sentence_id'], []).append(l)
-            d_list_sorted = sorted(d.items(), key=lambda l: len(l[1]),reverse=True)
-            e1=d_list_sorted[0][1][0]
-            s1=' '.join(e1["annotation"])
-            string_list.append(s1)
-            ore_sorted.append(e1)
-            for i in range (1, len(d_list_sorted)):
-                if len(ore_sorted)<2:
-                    e=d_list_sorted[i][1][0]
-                    s = ' '.join(e["annotation"])
-                    if s!=string_list[i-1]:
-                        ore_sorted.append(e)
-                        string_list.append(s)
-                else:
+
+def get_passage_from_template(template, term_type_to_term):
+    term_type_sequence, text_list = template
+    assert len(term_type_sequence) == len(text_list) - 1
+
+    term_type_to_span_list = defaultdict(lambda: [])
+    passage = text_list[0]
+
+    for text_index, text in enumerate(text_list[1:]):
+        term_type = term_type_sequence[text_index]
+        term = term_type_to_term[term_type]
+
+        span = (len(passage), len(passage) + len(term))
+        term_type_to_span_list[term_type].append(span)
+
+        passage = passage + term + text
+
+    return passage, term_type_to_span_list
+
+
+def get_id_name_from_entity_spec(entity_spec):
+    if not entity_spec:
+        return "", ""
+    op, arg = entity_spec
+
+    if op in ["AND", "OR"]:
+        first_id, first_name = "", ""
+
+        for sub_entity_spec in arg:
+            _id, name = get_id_name_from_entity_spec(sub_entity_spec)
+            if not first_id:
+                first_id = _id
+            if not first_name:
+                first_name = name
+            if first_id and first_name:
+                break
+
+        return first_id, first_name
+
+    elif op == "type_id":
+        return arg[1], ""
+
+    elif op == "type_name":
+        return "", arg[1]
+
+    else:
+        assert False
+
+
+def get_term_for_entity_spec(entity_spec):
+    _id, name = get_id_name_from_entity_spec(entity_spec)
+    if name:
+        return name
+    return _id
+
+
+class Summary:
+    def __init__(self, paper_list, e1_spec, e2_spec, pmid_spec):
+        self.paper_list = paper_list
+        self.e1_spec = get_term_for_entity_spec(e1_spec)
+        self.e2_spec = get_term_for_entity_spec(e2_spec)
+        self.pmid_spec = pmid_spec if pmid_spec else ""
+
+        # relation
+        self.selected_pmid_set = set()
+        self.annotator_to_selected_paper_relation = {
+            annotator: []
+            for annotator in ["odds_ratio", "cre", "ore"]
+        }
+
+        # passage
+        self.passage_type_list = ["query", "odds_ratio", "cre", "ore"]
+        self.type_to_passage_and_term_span = {}
+
+        # summary
+        self.text_summary = {}
+        self.html_summary = ""
+        return
+
+    def run_pipeline(self):
+        self.select_odds_ratio_relation()
+        self.select_cre_relation()
+        self.select_ore_relation()
+        self.create_passage()
+        self.create_text_summary()
+        self.create_html_summary()
+        return
+
+    def select_odds_ratio_relation(self):
+        paper_relation_list = [
+            (paper, relation)
+            for paper in self.paper_list
+            for relation in paper.annotator_to_relation.get("odds_ratio", [])
+        ]
+        if not paper_relation_list:
+            return
+
+        key_list = []
+        for paper, relation in paper_relation_list:
+            odds_ratio = relation["annotation"]["OR"]
+            try:
+                odds_ratio = float(odds_ratio)
+            except ValueError:
+                key_list.append(0)
+                continue
+
+            if odds_ratio < 1:
+                odds_ratio = 1 / odds_ratio
+            key_list.append(odds_ratio)
+
+        top_index = max(range(len(paper_relation_list)), key=lambda i: key_list[i])
+        paper_relation = paper_relation_list[top_index]
+        self.selected_pmid_set.add(paper_relation[0].pmid)
+        self.annotator_to_selected_paper_relation["odds_ratio"].append(paper_relation)
+        return
+
+    def select_cre_relation(self):
+        paper_relation_list = [
+            (paper, relation)
+            for paper in self.paper_list
+            for relation in paper.annotator_to_relation.get("rbert_cre", [])
+        ]
+        if not paper_relation_list:
+            return
+
+        key_list = []
+        for paper, relation in paper_relation_list:
+            label = relation["annotation"]["relation"]
+            score = relation["annotation"]["score"]
+            score = float(score[:-1]) * cre_label_to_weight[label]
+            key_list.append((paper.pmid not in self.selected_pmid_set, score))
+
+        # use negative score instead of reverse=True, to preserve paper order
+        top_index = max(range(len(paper_relation_list)), key=lambda i: key_list[i])
+
+        paper_relation = paper_relation_list[top_index]
+        self.selected_pmid_set.add(paper_relation[0].pmid)
+        self.annotator_to_selected_paper_relation["cre"].append(paper_relation)
+        return
+
+    def get_ore_top_predicate_to_paper_relation(self, annotator, top_k, exclude_predicate_set=None):
+        """
+
+        :param annotator: "spacy_ore" / "openie_ire"
+        :param top_k: int
+        :param exclude_predicate_set: set
+        :return: {
+            predicate: (pmid, relation),
+            ...
+        }
+        """
+        if top_k <= 0:
+            return {}
+        if exclude_predicate_set is None:
+            exclude_predicate_set = set()
+
+        predicate_to_paper_relation_list = defaultdict(lambda: [])
+
+        # collect predicate to relations (annotations) mapping
+        for paper in self.paper_list:
+            for relation in paper.annotator_to_relation.get(annotator, []):
+                predicate = relation["annotation"]["predicate"]
+                if predicate not in exclude_predicate_set:
+                    predicate_to_paper_relation_list[predicate].append((paper, relation))
+
+        # sort and get predicates with most relations
+        if len(predicate_to_paper_relation_list) > top_k:
+            predicate_list = [predicate for predicate in predicate_to_paper_relation_list]
+
+            if top_k == 1:
+                # max
+                key_list = [
+                    len(predicate_to_paper_relation_list[predicate])
+                    for predicate in predicate_list
+                ]
+                top_index = max(range(len(predicate_list)), key=lambda i: key_list[i])
+                top_index_list = [top_index]
+
+            else:
+                # heap sort
+                key_list = [
+                    (len(predicate_to_paper_relation_list[predicate]), -pi)  # add original index to ensure stable sorting
+                    for pi, predicate in enumerate(predicate_list)
+                ]
+                top_index_list = heapq.nlargest(top_k, range(len(predicate_list)), key=lambda i: key_list[i])
+
+            predicate_to_paper_relation_list = {
+                predicate_list[i]: predicate_to_paper_relation_list[predicate_list[i]]
+                for i in top_index_list
+            }
+
+        # use the first relation with not-yet-selected pmid for each predicate
+        predicate_to_paper_relation = {}
+        for predicate, paper_relation_list in predicate_to_paper_relation_list.items():
+            for paper_relation in paper_relation_list:
+                pmid = paper_relation[0].pmid
+                if pmid not in self.selected_pmid_set:
+                    self.selected_pmid_set.add(pmid)
+                    predicate_to_paper_relation[predicate] = paper_relation
                     break
-    if openie_ungrouped and len(ore_sorted)<2:
-        if len(openie_ungrouped)==1:
-            s1=' '.join(openie_ungrouped[0]["annotation"])
-            # already has one spacy
-            if len(string_list)!=0 and s1!=string_list[0]:
-                string_list.append(s1)
-                ore_sorted.append(openie_ungrouped[0])
-        else:
-            d = {}
-            for l in openie_ungrouped:
-                d.setdefault(l['sentence_id'], []).append(l)
-            d_list_sorted = sorted(d.items(), key=lambda l: len(l[1]),reverse=True)
-            for i in range (0, len(d_list_sorted)):
-                if len(ore_sorted)<2:
-                    e=d_list_sorted[i][1][0]
-                    s = ' '.join(e["annotation"])
-                    if len(ore_sorted)==0:
-                        ore_sorted.append(e)
-                        string_list.append(s)
-                    else:
-                        if s!=string_list[i-1]:
-                            ore_sorted.append(e)
+            else:
+                predicate_to_paper_relation[predicate] = paper_relation_list[0]
+
+        return predicate_to_paper_relation
+
+    def select_ore_relation(self):
+        # spacy
+        top_k = 2
+        spacy_predicate_to_paper_relation = self.get_ore_top_predicate_to_paper_relation(
+            "spacy_ore", top_k, exclude_predicate_set=None,
+        )
+        predicate_set = set(spacy_predicate_to_paper_relation.keys())
+
+        # openie
+        top_k -= len(spacy_predicate_to_paper_relation)
+        openie_predicate_to_paper_relation = self.get_ore_top_predicate_to_paper_relation(
+            "openie_ore", top_k, exclude_predicate_set=predicate_set,
+        )
+
+        for predicate_to_paper_relation in (spacy_predicate_to_paper_relation, openie_predicate_to_paper_relation):
+            for _predicate, paper_relation in predicate_to_paper_relation.items():
+                self.annotator_to_selected_paper_relation["ore"].append(paper_relation)
+        return
+
+    def get_template_type_and_term(self, passage_type):
+        if passage_type == "query":
+            e1_spec, e2_spec, pmid_spec = self.e1_spec, self.e2_spec, self.pmid_spec
+            term_type_to_term = {}
+
+            if pmid_spec:
+                term_type_to_term["pmid"] = pmid_spec
+                if e1_spec and e2_spec:
+                    template_type = "query_ABP"
+                    term_type_to_term["entity1"] = e1_spec
+                    term_type_to_term["entity2"] = e2_spec
+                elif e1_spec:
+                    template_type = "query_AP"
+                    term_type_to_term["entity"] = e1_spec
+                elif e2_spec:
+                    template_type = "query_AP"
+                    term_type_to_term["entity"] = e2_spec
                 else:
-                    break
-    return odds_sorted, cre_sorted, ore_sorted
-
-## AP
-def gen_summary_by_entity_pmid(kb,evidence_id_list,target):
-    combined_mentions = set()
-    detailed_evidence = []
-    odds_list = [""]
-    triplet_list = [""]
-    rbert_list = [""]
-    odds_list2 = [""]
-    triplet_list2 = [""]
-    rbert_list2 = [""]
-    for evidence_id in evidence_id_list:
-        _head, _tail, _annotation_id, _pmid, sentence_id = kb.get_evidence_by_id(
-        evidence_id, return_annotation=False, return_sentence=False)
-        head, tail, (annotator, annotation), pmid, sentence = kb.get_evidence_by_id(
-            evidence_id, return_annotation=True, return_sentence=True)
-        if (target[0] == "type_id_name" or target[0] == "type_name"):
-            if (target[1][2]==head[2] or target[1][2]==tail[2]) and pmid==target[2]:
-                detailed_evidence.append({
-                "head": head, "tail": tail,
-                "annotator": annotator, "annotation": annotation,
-                "pmid": pmid, "sentence": sentence, "sentence_id": sentence_id})
-        ## id id combo
-        elif target[0] == "type_id":
-            if (target[1][1]==head[1] or target[1][1]==tail[1]) and pmid==target[2]:
-                detailed_evidence.append({
-                "head": head, "tail": tail,
-                "annotator": annotator, "annotation": annotation,
-                "pmid": pmid, "sentence": sentence, "sentence_id": sentence_id})
-    odds_sorted, cre_sorted, ore_sorted = gen_summary_input(detailed_evidence)
-    if (odds_sorted or cre_sorted or ore_sorted):
-        mention1=""
-        mention2=""
-        if odds_sorted:
-            if target[0] == "type_id_name" or target[0] == "type_name":
-                if target[1][2] in odds_sorted["head"]:
-                    mention1 = odds_sorted["head"][2]
-                    mention2 = odds_sorted["tail"][2]
-                elif target[1][2] in odds_sorted["tail"]:
-                    mention1 = odds_sorted["tail"][2]
-                    mention2 = odds_sorted["head"][2]
-            elif target[0] == "type_id":
-                if target[1][1] in odds_sorted["head"]:
-                    mention1 = odds_sorted["head"][1]
-                    mention2 = odds_sorted["tail"][2]
-                elif target[1][1] in odds_sorted["tail"]:
-                    mention1= odds_sorted["tail"][1]
-                    mention2=odds_sorted["head"][2]
-            sent1 = "The odds ratio found between " + mention1 + " and " + mention2+ " is " + str(odds_sorted["annotation"][0]) + " (CI: " + str(odds_sorted["annotation"][1]) + ", p-value: "+  str(odds_sorted["annotation"][2])+ "). "
-            sent2 = mention1+ " and " + mention2 + " have an " + str(odds_sorted["annotation"][0])  + " (CI: " + str(odds_sorted["annotation"][1]) + ", p-value: "+  str(odds_sorted["annotation"][2]) + ")"+" odds ratio. "
-            ## html version
-            sent10 = "The odds ratio found between " + "<span style='color:#21d59b;font-weight:bold'>"+ html.escape(mention1) + " and " + html.escape(mention2)+ "</span>"+ " is " + "<mark style='background-color:62e0b84d'>" + html.escape(str(odds_sorted["annotation"][0])) + " (CI: " + html.escape(str(odds_sorted["annotation"][1])) + ", p-value: "+  html.escape(str(odds_sorted["annotation"][2]))+ ")." +"</mark>" +" "
-            sent20 = "<span style='color:#21d59b;font-weight:bold'>" + html.escape(mention1) + " and " + html.escape(mention2) + "</span>"+ " have an " + "<mark style='background-color:62e0b84d'>" + html.escape(str(odds_sorted["annotation"][0]))  + " (CI: " + html.escape(str(odds_sorted["annotation"][1])) + ", p-value: "+  html.escape(str(odds_sorted["annotation"][2])) + ")"+" odds ratio." +"</mark>" +" "
-            odds_list = [sent1,sent2]
-            combined_mentions.add(mention2)
-            odds_list = random.choice(odds_list)
-            odds_list2 = [sent10,sent20]
-            odds_list2 = random.choice(odds_list2)
-        if cre_sorted:
-            if target[0] == "type_id_name" or target[0] == "type_name":
-                if target[1][2] in cre_sorted["head"]:
-                    mention1 = cre_sorted["head"][2]
-                    mention2 = cre_sorted["tail"][2]
-                    if cre_sorted["head"][0] == "Disease" and (cre_sorted["tail"][0] == "SNP" or cre_sorted["tail"][0] == "ProteinMutation" or cre_sorted["tail"][0] =="CopyNumberVariant" or cre_sorted["tail"][0] == "DNAMutation"):
-                        tmp=mention1
-                        mention1=mention2
-                        mention2=tmp
-                        combined_mentions.add(mention1)
-                    else:
-                        combined_mentions.add(mention2)
-                elif target[2] in cre_sorted["tail"]:
-                    mention1= cre_sorted["tail"][2]
-                    mention2=cre_sorted["head"][2]
-                    if cre_sorted["tail"][0] == "Disease" and (cre_sorted["head"][0] == "SNP" or cre_sorted["head"][0] == "ProteinMutation" or cre_sorted["head"][0] =="CopyNumberVariant" or cre_sorted["head"][0] == "DNAMutation"):
-                        tmp=mention1
-                        mention1=mention2
-                        mention2=tmp
-                        combined_mentions.add(mention1)
-                    else:
-                        combined_mentions.add(mention2)
-            elif target[0] == "type_id":
-                if target[1][1] in cre_sorted["head"]:
-                    mention1 = cre_sorted["head"][1]
-                    mention2 = cre_sorted["tail"][1]
-                    if cre_sorted["head"][0] == "Disease" and (cre_sorted["tail"][0] == "SNP" or cre_sorted["tail"][0] == "ProteinMutation" or cre_sorted["tail"][0] =="CopyNumberVariant" or cre_sorted["tail"][0] == "DNAMutation"):
-                        tmp=mention1
-                        mention1=mention2
-                        mention2=tmp
-                        combined_mentions.add(mention1)
-                    else:
-                        combined_mentions.add(mention2)
-                elif target[1][1] in cre_sorted["tail"]:
-                    mention1= cre_sorted["tail"][1]
-                    mention2=cre_sorted["head"][1]
-                    if cre_sorted["tail"][0] == "Disease" and (cre_sorted["head"][0] == "SNP" or cre_sorted["head"][0] == "ProteinMutation" or cre_sorted["head"][0] =="CopyNumberVariant" or cre_sorted["head"][0] == "DNAMutation"):
-                        tmp=mention1
-                        mention1=mention2
-                        mention2=tmp
-                        combined_mentions.add(mention1)
-                    else:
-                        combined_mentions.add(mention2)
-            if cre_sorted["annotation"][0]=="Cause-associated":
-                sent1="We believe that there is a causal relationship between " +  str(mention1) +" and " + str(mention2)+ " with a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ". "+ "Here is an excerpt of the literature (PMID: " +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent2= "With a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ", we found that " + str(mention1)  + " is a causal variant of " + str(mention2)  + ". " + "This piece of relation is evidenced by the sentence in PMID: " + str(cre_sorted["pmid"]) + ': "'+cre_sorted["sentence"] + '" '
-                sent3= "Based on the sentence (PMID: " +str(cre_sorted["pmid"])+") "+ ': "'+ cre_sorted["sentence"] + '" Our finding indicates that ' + str(mention1) + " is associated with " + str(mention2) + " by a confidence of "+'{}'.format(cre_sorted["annotation"][1])+ ". "
-                ## html
-                sent10="We believe that there is a " +  "<mark style='background-color:#5f96ff4d'>" + "causal relationship" +"</mark>"+" between " +  "<span style='color:#0058ff;font-weight:bold'>" + str(mention1) +" and " + str(mention2) + "</span>" + " "+ "<mark style='background-color:#5f96ff4d'>"+ "with a confidence of " + '{}'.format(cre_sorted["annotation"][1])+"</mark>" + ". "+ "Here is an excerpt of the literature (PMID: " +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent20= "With a " + "<mark style='background-color:#5f96ff4d'>"+ "confidence of " + '{}'.format(cre_sorted["annotation"][1])+ "</mark>" +", we found that " +  "<span style='color:#0058ff;font-weight:bold'>" + str(mention1)  + "</span>"+ " is " +  "<mark style='background-color:#5f96ff4d'>" + "a causal variant of" +"</mark>"+ " " +  "<span style='color:#0058ff;font-weight:bold'>" + str(mention2)  + "</span>" + ". " + "This piece of relation is evidenced by the sentence in PMID: " + str(cre_sorted["pmid"]) + ': "'+cre_sorted["sentence"] + '" '
-                sent30= "Based on the sentence (PMID: " +str(cre_sorted["pmid"])+") "+ ': "'+ cre_sorted["sentence"] + '" Our finding indicates that ' +  "<span style='color:#0058ff;font-weight:bold'>" + str(mention1) + "</span>" + " is associated with " +  "<span style='color:#0058ff;font-weight:bold'>" + str(mention2) +  "</span>" + " "+ "<mark style='background-color:#5f96ff4d'>" + "by a confidence of "+'{}'.format(cre_sorted["annotation"][1])+"</mark>" + ". "
-            if cre_sorted["annotation"][0]=="In-patient":
-                sent1= mention1+ " occurs in some " + mention2 + " patients." " Our finidng shows that the confidence of this association is approximately " + '{}'.format(cre_sorted["annotation"][1])+". "+ "Here is an excerpt of the literature (PMID: " +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent2= "With a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ", we found that " + mention1+" patients "+ "carry " + mention2 +"." "This piece of relation is evidenced by the sentence in PMID: " + str(cre_sorted["pmid"]) + ': "'+cre_sorted["sentence"] + '" '
-                sent3= 'As claimed by "'+ cre_sorted["sentence"] +'" ' + '{}'.format(cre_sorted["annotation"][1])+ ""+ " sure that " + mention2+" patients show to have " + mention1 + ". "
-                ## html
-                sent10 = "<span style='color:#0058ff;font-weight:bold'>"+html.escape(mention1)+ "</span>" + " " +"<span style='color:#0058ff;font-weight:bold'>"+"occurs" +"</span>" + " in some " + "<span style='color:#0058ff;font-weight:bold'>"+ html.escape(mention2) + " patients." "</span>" +" Our finidng shows that " + "<mark style='background-color:#5f96ff4d'>"  +"the confidence of this association is approximately " + html.escape('{}'.format(cre_sorted["annotation"][1]))+"." + "</mark>" + "Here is an excerpt of the literature (PMID: " +html.escape(str(cre_sorted["pmid"]))+") " + 'that captures the relations: "' + html.escape(cre_sorted["sentence"]) +'" '
-                sent20 = "With a " +"<mark style='background-color:#5f96ff4d'>"+ "confidence of " + html.escape('{}'.format(cre_sorted["annotation"][1]))+ "</mark>" + ", we found that " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention1)+" patients"+ "</span>" + " " +"carry" + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention2) +"."+ "</span>" + "This piece of relation is evidenced by the sentence in PMID: " + html.escape(str(cre_sorted["pmid"])) + ': "'+html.escape(cre_sorted["sentence"]) + '" '
-                sent30 = 'As claimed by "'+ html.escape(cre_sorted["sentence"]) +'" ' + "we are " + "<mark style='background-color:#5f96ff4d'>"+ html.escape('{}'.format(cre_sorted["annotation"][1]))+ ""+ " sure" + "</mark>" + " that " +  "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention2)+" patients" + "</mark>" +" show to have " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention1) + "." + "</mark>" + " "
-            if cre_sorted["annotation"][0]=="Appositive":
-                sent1 = mention1+ "'s relation with " + mention2 + "is presupposed." + " We are " + '{}'.format(cre_sorted["annotation"][1])+ " " + "confidence about this association. " + "Here is an excerpt of the literature (PMID:" +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent2= "It is " + '{}'.format(cre_sorted["annotation"][1])+" "+  "presupposed that "+ mention1 + " is related to "+ mention2 + ' as evidenced by "' + cre_sorted["sentence"] + "' (PMID: "+str(cre_sorted["pmid"])+'." '
-                sent3= 'According to the sentence: "' + cre_sorted["sentence"]+ "' (PMID: " + str(cre_sorted["pmid"])+") " + "The relation between " + mention1 + " and " + mention2 + " contains a presupposition."
-                ## html
-                sent10 = "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention1)+ "'s relation with " + "<span style='color:#0058ff;font-weight:bold'>"+html.escape(mention2) + " is " + "<mark style='background-color:#5f96ff4d'>"+ "presupposed." + "</mark>"+ " We are " +  "<mark style='background-color:#5f96ff4d'>" + html.escape('{}'.format(cre_sorted["annotation"][1]))+ " " + "confidence" + "</mark>" +" about this association. " + "Here is an excerpt of the literature (PMID:" +html.escape(str(cre_sorted["pmid"]))+") " + 'that captures the relations: "' + html.escape(cre_sorted["sentence"]) +'" '
-                sent20 = "It is " + html.escape('{}'.format(cre_sorted["annotation"][1])) +" "+   "<mark style='background-color:#5f96ff4d'>" + "presupposed" + "</mark>" +" that " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention1) +"</mark>" + " is related to "+"<mark style='background-color:#5f96ff4d'>"+ html.escape(mention2) + "</mark>" + ' as evidenced by "' + html.escape(cre_sorted["sentence"]) + "' (PMID: "+ html.escape(str(cre_sorted["pmid"]))+'." '
-                sent30 = 'According to the sentence: "' + html.escape(cre_sorted["sentence"])+ "' (PMID: " + html.escape(str(cre_sorted["pmid"]))+ ") " + "The relation between " + "<span style='color:#0058ff;font-weight:bold'>"+ html.escape(mention1) +"</mark>" +" and " + html.escape(mention2) + " contains a " +   "<mark style='background-color:#5f96ff4d'>" + "presupposition." + "</mark>" +" "
-            rbert_list = [sent1,sent2,sent3]
-            rbert_list = random.choice(rbert_list)
-            rbert_list2 = [sent10,sent20,sent30]
-            rbert_list2 = random.choice(rbert_list2)
-        if ore_sorted:
-            mention3=""
-            mention4=""
-            if target[0] == "type_id_name" or target[0] == "type_name":
-                if target[1][2] in ore_sorted[0]["head"]:
-                    mention1 = ore_sorted[0]["head"][2]
-                    mention2 = ore_sorted[0]["tail"][2]
-                elif target[1][2] in ore_sorted[0]["tail"]:
-                    mention1= ore_sorted[0]["tail"][2]
-                    mention2=ore_sorted[0]["head"][2]
-            elif target[0] == "type_id":
-                if target[1][1] in ore_sorted[0]["head"]:
-                    mention1 = ore_sorted[0]["head"][1]
-                    mention2 = ore_sorted[0]["tail"][2]
-                elif target[1][1] in ore_sorted[0]["tail"]:
-                    mention1= ore_sorted[0]["tail"][1]
-                    mention2=ore_sorted[0]["head"][2]
-            combined_mentions.add(mention2)
-            if len(ore_sorted)==2:
-                if target[0] == "type_id_name" or target[0] == "type_name":
-                    if target[1][2] in ore_sorted[1]["head"]:
-                        mention3 = ore_sorted[1]["head"][2]
-                        mention4 = ore_sorted[1]["tail"][2]
-                    elif target[1][2] in ore_sorted[1]["tail"]:
-                        mention3= ore_sorted[1]["tail"][2]
-                        mention4=ore_sorted[1]["head"][2]
-                elif target[0] == "type_id":
-                    if target[1][1] in ore_sorted[1]["head"]:
-                        mention3 = ore_sorted[1]["head"][1]
-                        mention4 = ore_sorted[1]["tail"][2]
-                    elif target[1][1] in ore_sorted[1]["tail"]:
-                        mention3 = ore_sorted[1]["tail"][1]
-                        mention4 = ore_sorted[1]["head"][2]
-                relation1 = ' '.join(ore_sorted[0]["annotation"])
-                relation2= ' '.join(ore_sorted[1]["annotation"])
-                combined_mentions.add(mention4)
-                sent1="Moreover, there are also other relations found, which includes the following: " + str(mention1) + " & " + str(mention2)  + " and " + str(mention3) +" & " + str(mention4) + '." "'+ str(relation1) + '." and "' + str(relation2) + '." '
-                sent2='Notably, further relations between the aforementioned entities are discovered. "' + str(relation1) + '." "' + str(relation2) +'." '
-                sent3= str(mention1) + " & " + str(mention2)  + " and " + str(mention3) + " & " + str(mention4)+ ' also contain further relations. "'+ str(relation1) + '." and "' + str(relation2) +'." '
-                ## html
-                sent10="Moreover, there are also other relations found, which includes the following: " + "<span style='color:#ff8389;font-weight:bold'>"+ str(mention1) + "</span>" + " " +  html.escape("&") + " " + "<span style='color:#ff8389;font-weight:bold'>"+str(mention2)  +  "</span>" + " and " + "<span style='color:#0058ff;font-weight:bold'>" + str(mention3) + "</span>" + " " +html.escape("&") + " " +  "<span style='color:#0058ff;font-weight:bold'>"+str(mention4) +"</span>" + ". " + "<mark style='background-color:#ff83894d'>" + ' "'+ str(relation1) + '."' + "</mark>" + " and " + "<mark style='background-color:#ff83894d'>"+'"' + str(relation2) + '."' +  "</mark>"  + " "
-                sent20="Notably, further relations between the aforementioned entities are discovered. " + "<mark style='background-color:#ff83894d'>" + '"' + str(relation1) + '."' + "</mark>" + " " + "<mark style='background-color:#ff83894d'>" + '"' + html.escape(str(relation1)) + '."' + "</mark>" + " "
-                sent30= "<span style='color:#ff8389;font-weight:bold'>" + html.escape(str(mention1)) + "</span>" + " " +html.escape("&")+" " + "<span style='color:#ff8389;font-weight:bold'>"+ html.escape(str(mention2)) + "</span>" + " and " + "<span style='color:#ff8389;font-weight:bold'>"+ html.escape(str(mention3)) +  "</span>"  + " " + html.escape("&") + " " + "<span style='color:#ff8389;font-weight:bold'>" + html.escape(str(mention4)) + "</span>" + ' also contain further relations. ' + "<mark style='background-color:#ff83894d'>"+ '"'+ html.escape(str(relation1)) + '."' + "</mark>" + " and " + "<mark style='background-color:#ff83894d'>" + html.escape(str(relation2)) +'."' + "</mark>" + " "
+                    template_type = "query_P"
             else:
-                sent1='We also found "'+ ' '.join(ore_sorted[0]["annotation"]) + '"' + ". "
-                sent2='"'+ ' '.join(ore_sorted[0]["annotation"]) + '"' + ". "
-                sent3="In addition, " +'"'+ ' '.join(ore_sorted[0]["annotation"]) + '"' + ". "
-                ## html
-                sent10 ='We also found "'+ html.escape(' '.join(ore_sorted[0]["annotation"])) + '"' + ". "
-                sent20 ="<mark style='background-color:#ff83894d'>" + '"'+ html.escape(' '.join(ore_sorted[0]["annotation"])) + '"' + "." + "</mark>" + " "
-                sent30 ="In addition, " +"<mark style='background-color:#ff83894d'>"+'"'+ html.escape(' '.join(ore_sorted[0]["annotation"])) + '"' + "."+ "</mark>" + " "
-            triplet_list=[sent1,sent2,sent3]
-            triplet_list=random.choice(triplet_list)
-            triplet_list2=[sent10,sent20, sent30]
-            triplet_list2=random.choice(triplet_list2)
-        final_combine=list(combined_mentions)
-        if len(final_combine)>1:
-            final_combine= ", ".join(final_combine[:-1]) + " and " + final_combine[-1]
+                if e1_spec and e2_spec:
+                    template_type = "query_AB"
+                    term_type_to_term["entity1"] = e1_spec
+                    term_type_to_term["entity2"] = e2_spec
+                elif e1_spec:
+                    template_type = "query_A"
+                    term_type_to_term["entity"] = e1_spec
+                elif e2_spec:
+                    template_type = "query_A"
+                    term_type_to_term["entity"] = e2_spec
+                else:
+                    template_type = "X"
+
+        elif passage_type == "odds_ratio":
+            paper_relation_list = self.annotator_to_selected_paper_relation["odds_ratio"]
+
+            if not paper_relation_list:
+                template_type = "X"
+                term_type_to_term = {}
+
+            else:
+                paper, relation = paper_relation_list[0]
+
+                # pmid
+                if self.pmid_spec:
+                    template_type = "odds_ratio_X"
+                    term_type_to_term = {}
+                else:
+                    template_type = "odds_ratio_P"
+                    term_type_to_term = {"pmid": paper.pmid}
+
+                # variant and disease
+                si = relation["sentence_index"]
+                sentence_datum = paper.sentence_list[si]
+                mention_list = sentence_datum["mention"]
+
+                hi = relation["head_mention"][0]
+                ti = relation["tail_mention"][0]
+                term_type_to_term["variant"] = mention_list[hi]["name"]
+                term_type_to_term["disease"] = mention_list[ti]["name"]
+
+                # OR, CI, p-value
+                annotation = relation["annotation"]
+                term_type_to_term["OR"] = annotation["OR"]
+                term_type_to_term["CI"] = annotation["CI"]
+                term_type_to_term["p-value"] = annotation["p-value"]
+
+        elif passage_type == "cre":
+            paper_relation_list = self.annotator_to_selected_paper_relation["cre"]
+
+            if not paper_relation_list:
+                template_type = "X"
+                term_type_to_term = {}
+
+            else:
+                paper, relation = paper_relation_list[0]
+
+                # pmid
+                if self.pmid_spec:
+                    template_type = "X"
+                    term_type_to_term = {}
+                else:
+                    template_type = "P"
+                    term_type_to_term = {"pmid": paper.pmid}
+
+                # sentence
+                si = relation["sentence_index"]
+                sentence_datum = paper.sentence_list[si]
+                term_type_to_term["sentence"] = sentence_datum["sentence"]
+                mention_list = sentence_datum["mention"]
+
+                # variant and disease
+                hi = relation["head_mention"][0]
+                ti = relation["tail_mention"][0]
+                term_type_to_term["variant"] = mention_list[hi]["name"]
+                term_type_to_term["disease"] = mention_list[ti]["name"]
+
+                # relation score and label
+                annotation = relation["annotation"]
+                term_type_to_term["score"] = annotation["score"]
+                label = annotation["relation"]
+
+                if label == "Cause-associated":
+                    template_type = f"cre_cause_{template_type}"
+                elif label == "In-patient":
+                    template_type = f"cre_patient_{template_type}"
+                elif label == "Appositive":
+                    template_type = f"cre_appositive_{template_type}"
+                else:
+                    assert False
+
+        elif passage_type == "ore":
+            paper_relation_list = self.annotator_to_selected_paper_relation["ore"]
+
+            if not paper_relation_list:
+                template_type = "X"
+                term_type_to_term = {}
+
+            else:
+                paper_relation_list = paper_relation_list[:2]
+
+                if len(paper_relation_list) == 2:
+                    # pmid
+                    if self.pmid_spec:
+                        template_type = "ore_2_X"
+                        term_type_to_term = {}
+                    else:
+                        template_type = "ore_2_P"
+                        term_type_to_term = {
+                            "pmid1": paper_relation_list[0][0].pmid,
+                            "pmid2": paper_relation_list[1][0].pmid,
+                        }
+
+                    # triplet
+                    for ri, (_paper, relation) in enumerate(paper_relation_list):
+                        annotation = relation["annotation"]
+                        triplet = f"{annotation['subject']} {annotation['predicate']} {annotation['object']}"
+                        term_type_to_term[f"triplet{ri + 1}"] = triplet
+
+                else:
+                    # pmid
+                    if self.pmid_spec:
+                        template_type = "ore_1_X"
+                        term_type_to_term = {}
+                    else:
+                        template_type = "ore_1_P"
+                        term_type_to_term = {
+                            "pmid": paper_relation_list[0][0].pmid,
+                        }
+
+                    # triplet
+                    _paper, relation = paper_relation_list[0]
+                    annotation = relation["annotation"]
+                    triplet = f"{annotation['subject']} {annotation['predicate']} {annotation['object']}"
+                    term_type_to_term[f"triplet"] = triplet
+
         else:
-            final_combine="".join(final_combine)
-        sent1= "Based on our search results, in PMID: " + target[2]+ ", relation exists between " +  mention1 + " and these prominent mentions: " + final_combine + ". "
-        sent2= "From PMID: " + target[2] + ", " + mention1 + " relates to "  + final_combine + ". "
-        sent3= "We found that these mentions-" + final_combine+ "-" + "relate(s) to " + mention1 +" in PMID: " +target[2]
-        ## html intro
-        sent10=  "Based on our search results, in PMID: " + "<b>" +html.escape(target[2]) +"</b>"+ ", relation exists between " +  "<b>" + html.escape(mention1) +  "</b>" +" and these prominent mentions: " + "<span style='color:#f99600;font-weight:bold'>" + html.escape(final_combine) + "</span>"  +". "
-        sent20= "From PMID: " +"<b>"+ html.escape(target[2])+"</b>" + ", " + "<b>"+html.escape(mention1) +"</b>"+ " relates to "  + "<span style='color:#f99600;font-weight:bold'>" + html.escape(final_combine) + "</span>" + ". "
-        sent30= "We found that these mentions-" + "<span style='color:#f99600;font-weight:bold'>" + html.escape(final_combine)+ "</span>"  + "-" + "relate(s) to " +"<b>"+ html.escape(mention1) + "</b>" +" in PMID: " +"<b>"+html.escape(target[2]) + "</b>" + "." + ' '
-        intro_list=[sent1,sent2, sent3]
-        intro_list=random.choice(intro_list)
-        intro_list2=[sent10,sent20, sent30]
-        intro_list2=random.choice(intro_list2)
-        summary=list(intro_list)+list(odds_list)+list(rbert_list)+list(triplet_list)
-        final_summary = ''.join(str(v) for v in summary)
-        final_summary_ht = list(intro_list2)+list(odds_list2)+list(rbert_list2)+list(triplet_list2)
-        final_summary_ht  = ''.join(str(v) for v in final_summary_ht)
-        return tuple([final_summary,final_summary_ht])
-    else:
-        final_summary = "There are not enough information for generating a substantial summary for this entity and PMID. Please view the following table or re-enter the entity."
-        final_summary_ht = html.escape("There are not enough information for generating a substantial summary for this entity. Please view the following table or re-enter the entity.")
-        return tuple([final_summary,final_summary_ht])
+            assert False
 
-## A
-def gen_summary_by_entity(kb,evidence_id_list,target):
-    combined_mentions = set()
-    detailed_evidence = []
-    odds_list = [""]
-    triplet_list = [""]
-    rbert_list = [""]
-    odds_list2 = [""]
-    triplet_list2 = [""]
-    rbert_list2 = [""]
-    for evidence_id in evidence_id_list:
-        _head, _tail, _annotation_id, _pmid, sentence_id = kb.get_evidence_by_id(
-        evidence_id, return_annotation=False, return_sentence=False)
-        head, tail, (annotator, annotation), pmid, sentence = kb.get_evidence_by_id(
-            evidence_id, return_annotation=True, return_sentence=True)
-        if (target[0] == "type_id_name" or target[0] == "type_name"):
-            if (target[1][2]==head[2] or target[1][2]==tail[2]):
-                detailed_evidence.append({
-                "head": head, "tail": tail,
-                "annotator": annotator, "annotation": annotation,
-                "pmid": pmid, "sentence": sentence, "sentence_id": sentence_id})
-        ## id id combo
-        elif (target[0] == "type_id"):
-            if (target[1][1]==head[1] or target[1][1]==tail[1]):
-                detailed_evidence.append({
-                "head": head, "tail": tail,
-                "annotator": annotator, "annotation": annotation,
-                "pmid": pmid, "sentence": sentence, "sentence_id": sentence_id})
-    odds_sorted, cre_sorted, ore_sorted = gen_summary_input(detailed_evidence)
-    if (odds_sorted or cre_sorted or ore_sorted):
-        mention1=""
-        mention2=""
-        if odds_sorted:
-            if target[0] == "type_id_name" or target[0] == "type_name":
-                if target[1][2] in odds_sorted["head"]:
-                    mention1 = odds_sorted["head"][2]
-                    mention2 = odds_sorted["tail"][2]
-                elif target[1][2] in odds_sorted["tail"]:
-                    mention1 = odds_sorted["tail"][2]
-                    mention2 = odds_sorted["head"][2]
-            elif target[0] == "type_id":
-                if target[1][1] in odds_sorted["head"]:
-                    mention1 = odds_sorted["head"][1]
-                    mention2 = odds_sorted["tail"][2]
-                elif target[1][1] in odds_sorted["tail"]:
-                    mention1= odds_sorted["tail"][1]
-                    mention2=odds_sorted["head"][2]
-            sent1="The odds ratio found between " + mention1 + " and " + mention2+ " in PMID: " + str(odds_sorted["pmid"]) + " is " + str(odds_sorted["annotation"][0]) + " (CI: " + str(odds_sorted["annotation"][1]) + ", p-value: "+  str(odds_sorted["annotation"][2])+ "). "
-            sent2=mention1+ " and " + mention2 + " have an " + str(odds_sorted["annotation"][0])  + " (CI: " + str(odds_sorted["annotation"][1]) + ", p-value: "+  str(odds_sorted["annotation"][2]) + ")"+" odds ratio (PMID: " + str(odds_sorted["pmid"]) + "). "
-            ## html
-            sent10="The odds ratio found between " + "<span style='color:#21d59b;font-weight:bold'>" + html.escape(mention1) + "</span>" + " and " +"<span style='color:#21d59b;font-weight:bold'>"+ html.escape(mention2) +"</span>"+ " in PMID: " + html.escape(str(odds_sorted["pmid"])) + " is " + "<mark style='background-color:#62e0b84d'>" + html.escape(str(odds_sorted["annotation"][0])) + " (CI: " + html.escape(str(odds_sorted["annotation"][1])) + ", p-value: "+  html.escape(str(odds_sorted["annotation"][2]))+ ")." + "</mark>" + " "
-            sent20= "<span style='color:#21d59b;font-weight:bold'>" + html.escape(mention1)+ " and " + mention2 + "</span>" + " have an " + "<mark style='background-color:#62e0b84d'>" + str(odds_sorted["annotation"][0])  + " (CI: " + str(odds_sorted["annotation"][1]) + ", p-value: "+  str(odds_sorted["annotation"][2]) + ")"+" odds ratio" + "</mark>"+  " (PMID: " + str(odds_sorted["pmid"]) + ")."  +" "
-            odds_list=[sent1,sent2]
-            combined_mentions.add(mention2)
-            odds_list=random.choice(odds_list)
-            odds_list2=[sent10,sent20]
-            odds_list2=random.choice(odds_list2)
-        if cre_sorted:
-            if target[0] == "type_id_name" or target[0] == "type_name":
-                if target[1][2] in cre_sorted["head"]:
-                    mention1 = cre_sorted["head"][2]
-                    mention2 = cre_sorted["tail"][2]
-                    if cre_sorted["head"][0] == "Disease" and (cre_sorted["tail"][0] == "SNP" or cre_sorted["tail"][0] == "ProteinMutation" or cre_sorted["tail"][0] =="CopyNumberVariant" or cre_sorted["tail"][0] == "DNAMutation"):
-                        tmp=mention1
-                        mention1=mention2
-                        mention2=tmp
-                        combined_mentions.add(mention1)
-                    else:
-                        combined_mentions.add(mention2)
-                elif target[1][2] in cre_sorted["tail"]:
-                    mention1= cre_sorted["tail"][2]
-                    mention2=cre_sorted["head"][2]
-                    if cre_sorted["tail"][0] == "Disease" and (cre_sorted["head"][0] == "SNP" or cre_sorted["head"][0] == "ProteinMutation" or cre_sorted["head"][0] =="CopyNumberVariant" or cre_sorted["head"][0] == "DNAMutation"):
-                        tmp=mention1
-                        mention1=mention2
-                        mention2=tmp
-                        combined_mentions.add(mention1)
-                    else:
-                        combined_mentions.add(mention2)
-            elif target[0] == "type_id":
-                if target[1][1] in cre_sorted["head"]:
-                    mention1 = cre_sorted["head"][1]
-                    mention2 = cre_sorted["tail"][2]
-                    if cre_sorted["head"][0] == "Disease" and (cre_sorted["tail"][0] == "SNP" or cre_sorted["tail"][0] == "ProteinMutation" or cre_sorted["tail"][0] =="CopyNumberVariant" or cre_sorted["tail"][0] == "DNAMutation"):
-                        tmp = mention1
-                        mention1=mention2
-                        mention2=tmp
-                        combined_mentions.add(mention1)
-                    else:
-                        combined_mentions.add(mention2)
-                elif target[1][1] in cre_sorted["tail"]:
-                    mention1= cre_sorted["tail"][1]
-                    mention2=cre_sorted["head"][2]
-                    if cre_sorted["tail"][0] == "Disease" and (cre_sorted["head"][0] == "SNP" or cre_sorted["head"][0] == "ProteinMutation" or cre_sorted["head"][0] =="CopyNumberVariant" or cre_sorted["head"][0] == "DNAMutation"):
-                        tmp=mention1
-                        mention1=mention2
-                        mention2=tmp
-                        combined_mentions.add(mention1)
-                    else:
-                        combined_mentions.add(mention2)
-            if cre_sorted["annotation"][0]=="Cause-associated":
-                sent1="We believe that there is a causal relationship between " +  str(mention1) +" and " + str(mention2)+ " with a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ". "+ "Here is an excerpt of the literature (PMID: " +str(cre_sorted["pmid"])+") " + "that captures the relations: '" + cre_sorted["sentence"] +"' "
-                sent2= "With a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ", we found that " + str(mention1)  + " is a causal variant of " + str(mention2)  + ". " + "This piece of relation is evidenced by the sentence in PMID: " + str(cre_sorted["pmid"]) + ' "'+cre_sorted["sentence"] + '" '
-                sent3= "Based on the sentence (PMID: " +str(cre_sorted["pmid"])+") "+ ': "'+ cre_sorted["sentence"] + '" Our finding indicates that ' + str(mention1) + " is associated with " + str(mention2) + " by a confidence of "+'{}'.format(cre_sorted["annotation"][1])+ ". "
-                ##html
-                sent10 ="We believe that there is a " + "<mark style='background-color:#5f96ff4d'>" + "causal relationship" + "</mark>" +  " between " +  "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1)) + "</span>" +" and " + "<span style='color:#0058ff;font-weight:bold'>"+html.escape(str(mention2))+ "</span>"+ " with a " + "<mark style='background-color:#5f96ff4d'>"+ "confidence of " + html.escape('{}'.format(cre_sorted["annotation"][1]))+ "." + "</mark>" + " Here is an excerpt of the literature (PMID: " +html.escape(str(cre_sorted["pmid"]))+") " + 'that captures the relations: "' + html.escape(cre_sorted["sentence"]) +'" '
-                sent20 = "With a " +"<mark style='background-color:#5f96ff4d'>"+"confidence of " + html.escape('{}'.format(cre_sorted["annotation"][1]))+"</mark>" + ", we found that " + "<span style='color:#0058ff;font-weight:bold'>" + str(mention1) + "</span>" + " is a " + "<mark style='background-color:#5f96ff4d'>" + "causal variant" + "</mark>" + " of " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention2)) +"</span>" + ". " + "This piece of relation is evidenced by the sentence in PMID: " + html.escape(str(cre_sorted["pmid"])) + ' "'+html.escape(cre_sorted["sentence"]) + '" '
-                sent30 = "Based on the sentence (PMID: " +html.escape(str(cre_sorted["pmid"]))+") "+ ': "'+ html.escape(cre_sorted["sentence"]) + '" Our finding indicates that ' + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1)) + "</span>" + " is " + "<mark style='background-color:#5f96ff4d'>" + "associated with" + "</mark>" " " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention2)) +"</span>" + " by a " + "<mark style='background-color:#5f96ff4d'>"+" confidence of "+html.escape('{}'.format(cre_sorted["annotation"][1]))+ "." + "</mark>" + " "
-            if cre_sorted["annotation"][0]=="In-patient":
-                sent1= mention1+ " occurs in some " + mention2 + " patients." " Our finidng shows that the confidence of this association is approximately " + '{}'.format(cre_sorted["annotation"][1])+". "+ "Here is an excerpt of the literature (PMID:" +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent2= "With a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ", we found that " + mention1+" patients "+ "carry " + mention2 +"." "This piece of relation is evidenced by the sentence in PMID: " + str(cre_sorted["pmid"]) + ': "'+cre_sorted["sentence"] + '" '
-                sent3= 'As claimed by "'+ cre_sorted["sentence"] +'" ' + '{}'.format(cre_sorted["annotation"][1])+ ""+ " sure that " + mention2+" patients show to have " + mention1 + "(PMID: " +str(cre_sorted["pmid"]) + "). "
-                ## html
-                sent10 = "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1)) + " " +"</span>" +"<mark style='background-color:#5f96ff4d'>" + "occurs" + "</mark>" + " in some " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention2)) + " patients." +"</span>"+ " Our finidng shows that the " + "<mark style='background-color:#5f96ff4d'>"+ " confidence of this association is approximately " + html.escape('{}'.format(cre_sorted["annotation"][1]))+"." + "</mark>"+ " Here is an excerpt of the literature (PMID:" +html.escape(str(cre_sorted["pmid"]))+") " + 'that captures the relations: "' + html.escape(cre_sorted["sentence"]) +'" '
-                sent20 = "With a " + "<mark style='background-color:#5f96ff4d'>" + "confidence of " + html.escape('{}'.format(cre_sorted["annotation"][1]))+ "</mark>"+ ", we found that " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1))+"</span>" +" " + "<mark style='background-color:#5f96ff4d'>" +"patients" + " carry" + "</mark>" + " "+ "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention2)) +"." +"</span>" + "This piece of relation is evidenced by the sentence in PMID: " + html.escape(str(cre_sorted["pmid"])) + ': "'+ html.escape(cre_sorted["sentence"]) + '" '
-                sent30 = 'As claimed by "'+ html.escape(cre_sorted["sentence"]) +'" ' + "we are " + "<mark style='background-color:#5f96ff4d'>"+ html.escape('{}'.format(cre_sorted["annotation"][1]))+ ""+ " sure" +"</mark>" +" that " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1))+" patients " + "</span>" +  " show to have " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention1)  + "</span>" + "(PMID: " +str(cre_sorted["pmid"]) + "). "
-            if cre_sorted["annotation"][0]=="Appositive":
-                sent1= mention1+ "'s relation with " + mention2 + "is presupposed." + " We are " + '{}'.format(cre_sorted["annotation"][1])+ " " + "confident about this association. " + "Here is an excerpt of the literature (PMID:" +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent2= "It is " + '{}'.format(cre_sorted["annotation"][1])+" "+  "presupposed that "+ mention1 + " is related to "+ mention2 + ' as evidenced by "' + cre_sorted["sentence"] + "' (PMID: "+str(cre_sorted["pmid"])+')." '
-                sent3= 'According to the sentence: "' + cre_sorted["sentence"]+ "' (PMID: " + str(cre_sorted["pmid"])+") " + "The relation between " + mention1 + " and " + mention2 + " contains a presupposition."
-                ## html
-                sent10= "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1))+ "'s"+ "</span>"+" relation with " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention2)) + "</span>" + "is " + "<mark style='background-color:#5f96ff4d'>" + "presupposed." + "</mark>" + " We are " + "<mark style='background-color:#5f96ff4d'>" + html.escape('{}'.format(cre_sorted["annotation"][1]))+ " " + "confident" + "</mark>" + " about this association. " + "Here is an excerpt of the literature (PMID:" + html.escape(str(cre_sorted["pmid"]))+") " + 'that captures the relations: "' + html.escape(cre_sorted["sentence"]) +'" '
-                sent20= "It is " + "<mark style='background-color:#5f96ff4d'>" + html.escape('{}'.format(cre_sorted["annotation"][1])) +  " presupposed" + "</mark>" + " that "+  "<span style='color:#0058ff;font-weight:bold'>"  + html.escape(str(mention1)) + "</span>" + " is related to "+ "<span style='color:#0058ff;font-weight:bold'>"+ html.escape(str(mention2)) + "</span>"+' as evidenced by "' + cre_sorted["sentence"] + "' (PMID: "+ html.escape(str(cre_sorted["pmid"]))+')." '
-                sent30= 'According to the sentence: "' + cre_sorted["sentence"]+ "' (PMID: " + str(cre_sorted["pmid"])+") " + "The relation between " + "<span style='color:#0058ff;font-weight:bold'>"+ html.escape(str(mention1)) +  "</span>" + " and " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention2)) + "</span>"+ " contains a " + "<mark style='background-color:#5f96ff4d'>" +"presupposition." + "</mark>" + " "
-            rbert_list=[sent1,sent2,sent3]
-            rbert_list=random.choice(rbert_list)
-            rbert_list2=[sent10,sent20,sent30]
-            rbert_list2=random.choice(rbert_list2)
-        if ore_sorted:
-            mention3=""
-            mention4=""
-            if target[0] == "type_id_name" or target[0] == "type_name":
-                if target[1][2] in ore_sorted[0]["head"]:
-                    mention1 = ore_sorted[0]["head"][2]
-                    mention2 = ore_sorted[0]["tail"][2]
-                elif target[1][2] in ore_sorted[0]["tail"]:
-                    mention1= ore_sorted[0]["tail"][2]
-                    mention2=ore_sorted[0]["head"][2]
-            elif target[0] == "type_id":
-                if target[1][1] in ore_sorted[0]["head"]:
-                    mention1 = ore_sorted[0]["head"][1]
-                    mention2 = ore_sorted[0]["tail"][2]
-                elif target[1][1] in ore_sorted[0]["tail"]:
-                    mention1= ore_sorted[0]["tail"][1]
-                    mention2=ore_sorted[0]["head"][2]
-            combined_mentions.add(mention2)
-            if len(ore_sorted)==2:
-                if target[0] == "type_id_name" or target[0] == "type_name":
-                    if target[1][2] in ore_sorted[1]["head"]:
-                        mention3 = ore_sorted[1]["head"][2]
-                        mention4 = ore_sorted[1]["tail"][2]
-                    elif target[1][2] in ore_sorted[1]["tail"]:
-                        mention3= ore_sorted[1]["tail"][2]
-                        mention4=ore_sorted[1]["head"][2]
-                elif target[0] == "type_id":
-                    if target[1][1] in ore_sorted[1]["head"]:
-                        mention3 = ore_sorted[1]["head"][1]
-                        mention4 = ore_sorted[1]["tail"][2]
-                    elif target[1][1] in ore_sorted[1]["tail"]:
-                        mention3 = ore_sorted[1]["tail"][1]
-                        mention4 = ore_sorted[1]["head"][2]
-                relation1 = ' '.join(ore_sorted[0]["annotation"])
-                relation2= ' '.join(ore_sorted[1]["annotation"])
-                combined_mentions.add(mention4)
-                sent1="Moreover, there are also other relations found, which includes the following: " + str(mention1) +" & "+ str(mention2)  + " and " + str(mention3) + " & " +str(mention4) + '. "'+ str(relation1) + '" (PMID: ' +  ore_sorted[0]["pmid"]+ ') and "' + str(relation2) + '" (PMID: ' +  ore_sorted[1]["pmid"]+'). '
-                sent2='Notably, further relations between the aforementioned entities are discovered. ' + str(mention1) +" & " + str(mention2)  + " and " + str(mention3) + " & "+  str(mention4) + '. "'+ str(relation1) + '" (PMID: ' +  ore_sorted[0]["pmid"]+ ') and "' + str(relation2) + '" (PMID: ' +  ore_sorted[1]["pmid"]+'). '
-                sent3= str(mention1) + " & " + str(mention2)  + " and " + str(mention3) +" & " + str(mention4)+ ' also contain further relations. "'+ str(mention2)  + " & "  + str(mention3) + '. "' +  str(mention4) + '." "'+ str(relation1) + '" (PMID: ' +  ore_sorted[0]["pmid"]+ ') and "' + str(relation2) + '" (PMID: ' +  ore_sorted[1]["pmid"]+'). '
-                ## html
-                sent10 ="Moreover, there are also other relations found, which includes the following: " + "<span style='color:#ff8389;font-weight:bold'>" + html.escape(str(mention1))  + " " +html.escape("&")  + " " + html.escape(str(mention2))  +"</span>" +" and " + "<span style='color:#ff8389;font-weight:bold'>" + html.escape(str(mention3)) +" "  +html.escape("&") + " " + html.escape(str(mention4)) + '. ' + "</span>" + " " + "<mark style='background-color:#ff83894d'>"+ '"'+ str(relation1) + '" (PMID: ' +  ore_sorted[0]["pmid"]+ ')' + "</mark>" + ' and ' + "<mark style='background-color:#ff83894d'>"+'"' + str(relation2) + '" (PMID: ' +  ore_sorted[1]["pmid"]+').' +"</mark>" + " "
-                sent20 ='Notably, further relations between the aforementioned entities are discovered. ' + "<span style='color:#ff8389;font-weight:bold'>" + html.escape(str(mention1))  + " "   +html.escape("&") +" "  +html.escape(str(mention2))  +"</span>"+ " and " + "<span style='color:#ff8389;font-weight:bold'>" + html.escape(str(mention3)) + " " +html.escape("&") + " "  + html.escape(str(mention4)) + '. ' +"</span>"+ ""  +"<mark style='background-color:#ff83894d'>"+ '"'+ str(relation1) + '" (PMID: ' +  ore_sorted[0]["pmid"]+ ')' + "</mark>" + ' and ' + "<mark style='background-color:#ff83894d'>"+'"' + str(relation2) + '" (PMID: ' +  ore_sorted[1]["pmid"]+').' +"</mark>" + " "
-                sent30 = "<span style='color:#ff8389;font-weight:bold'>"+html.escape(str(mention1)) +" "  +html.escape("&")+ " " + html.escape(str(mention2))  + "</span>" + " and " + "<span style='color:#ff8389;font-weight:bold'>" + html.escape(str(mention3)) +" " + html.escape("&") + " " + html.escape(str(mention4))+ "</span>" + ' also contain further relations. '+ "<mark style='background-color:#ff83894d'>"+ '"'+ html.escape(str(relation1)) + '" (PMID: ' +  ore_sorted[0]["pmid"]+ ')' + "</mark>" + ' and ' + "<mark style='background-color:#ff83894d'>"+'"' + str(relation2) + '" (PMID: ' +  ore_sorted[1]["pmid"]+').' +"</mark>" + " "
-            else:
-                sent1='We also found "'+ ' '.join(ore_sorted[0]["annotation"]) + '" (PMID: ' +  ore_sorted[0]["pmid"] + "). "
-                sent2='"'+ ' '.join(ore_sorted[0]["annotation"]) + '" (PMID: ' +  ore_sorted[0]["pmid"] + ". "
-                sent3="In addition, " +'"'+ ' '.join(ore_sorted[0]["annotation"]) + '" (PMID: ' +  ore_sorted[0]["pmid"] + "). "
-                ## html
-                sent10 ='We also found' + "<mark style='background-color:#ff83894d'>" + '"'+ html.escape(' '.join(ore_sorted[0]["annotation"])) + '" (PMID: ' +  ore_sorted[0]["pmid"] + ")." + "</mark>" + " "
-                sent20 ="<mark style='background-color:#ff83894d'>" + '"'+ html.escape(' '.join(ore_sorted[0]["annotation"])) + '" (PMID: ' +  ore_sorted[0]["pmid"] + ")." + "</mark>" + " "
-                sent30 ="In addition, " + "<mark style='background-color:#ff83894d'>" +'"'+ html.escape(' '.join(ore_sorted[0]["annotation"])) + '" (PMID: ' +  ore_sorted[0]["pmid"] + ")." + "</mark>" + " "
-            triplet_list=[sent1,sent2,sent3]
-            triplet_list=random.choice(triplet_list)
-            triplet_list2=[sent10,sent20,sent30]
-            triplet_list2=random.choice(triplet_list2)
-        final_combine=list(combined_mentions)
-        final_combine= ", ".join(final_combine[:-1]) + " and " + final_combine[-1]
-        sent1="Based on our search results, relation exists between " + mention1 + " and these prominent mentions: " + (final_combine) + ". "
-        sent2= mention1 + " relates to "  + final_combine + ". "
-        sent3= "We found that these mentions-" + final_combine+ "-" + "relate(s) to " + mention1 +". "
-        ## html
-        sent10="Based on our search results, relation exists between " + "<b>" + html.escape(mention1) +"</b>" + " and these prominent mentions: " +  "<span style='color:#f99600;font-weight:bold'>" +html.escape(final_combine) + "</span>" + ". "
-        sent20= "<b>" + html.escape(mention1) + "</b>"+" relates to "  + "<span style='color:#f99600;font-weight:bold'>"+ html.escape(final_combine) + "</span>"+ ". "
-        sent30= "We found that these mentions-" + "<span style='color:#f99600;font-weight:bold'>" + html.escape(final_combine) + "</span>"+"-" + "relate(s) to " +"<b>"+ html.escape(mention1) + "</b>"  + ". "
-        intro_list=[sent1,sent2, sent3]
-        intro_list=random.choice(intro_list)
-        intro_list2=[sent10,sent20, sent30]
-        intro_list2=random.choice(intro_list2)
-        summary=list(intro_list)+list(odds_list)+list(rbert_list)+list(triplet_list)
-        final_summary = ''.join(str(v) for v in summary)
-        final_summary_ht = list(intro_list2)+list(odds_list2)+list(rbert_list2)+list(triplet_list2)
-        final_summary_ht  = ''.join(str(v) for v in final_summary_ht)
-        return tuple([final_summary,final_summary_ht])
-    else:
-        final_summary = "There are not enough information for generating a substantial summary for this entity. Please view the following table or re-enter the entity."
-        final_summary_ht = html.escape("There are not enough information for generating a substantial summary for this entity. Please view the following table or re-enter the entity.")
-        return tuple([final_summary,final_summary_ht])
+        return template_type, term_type_to_term
 
-## AB
-def gen_summary_by_pair(kb,evidence_id_list,target):
-    detailed_evidence = []
-    odds_list = [""]
-    triplet_list = [""]
-    rbert_list = [""]
-    odds_list2 = [""]
-    triplet_list2 = [""]
-    rbert_list2 = [""]
-    for evidence_id in evidence_id_list:
-        _head, _tail, _annotation_id, _pmid, sentence_id = kb.get_evidence_by_id(
-        evidence_id, return_annotation=False, return_sentence=False)
-        head, tail, (annotator, annotation), pmid, sentence = kb.get_evidence_by_id(
-            evidence_id, return_annotation=True, return_sentence=True)
-        ## name name combo
-        if (target[0] == "type_id_name" or target[0] == "type_name") and (target[2] == "type_id_name" or target[2] == "type_name"):
-            if (target[1][2]==head[2] or target[1][2]==tail[2]) and (target[3][2]==head[2] or target[3][2]==tail[2]):
-                detailed_evidence.append({
-                "head": head, "tail": tail,
-                "annotator": annotator, "annotation": annotation,
-                "pmid": pmid, "sentence": sentence, "sentence_id": sentence_id})
-        ## id id combo
-        elif (target[0] == "type_id") and (target[2] == "type_id"):
-            if (target[1][1]==head[1] or target[1][1]==tail[1]) and (target[3][1]==head[1] or target[3][1]==tail[1]):
-                detailed_evidence.append({
-                "head": head, "tail": tail,
-                "annotator": annotator, "annotation": annotation,
-                "pmid": pmid, "sentence": sentence, "sentence_id": sentence_id})
-        ## id name combo
-        elif (target[0] == "type_id") and (target[2] == "type_id_name" or target[2] == "type_name"):
-            if (target[1][1]==head[1] or target[1][1]==tail[1]) and (target[3][2]==head[2] or target[3][2]==tail[2]):
-                detailed_evidence.append({
-                "head": head, "tail": tail,
-                "annotator": annotator, "annotation": annotation,
-                "pmid": pmid, "sentence": sentence, "sentence_id": sentence_id})
-        ## name id combo
-        elif (target[0] == "type_id_name" or target[0] == "type_name") and (target[2] == "type_id"):
-            if (target[1][2]==head[2] or target[1][2]==tail[2]) and (target[3][1]==head[1] or target[3][1]==tail[1]):
-                detailed_evidence.append({
-                "head": head, "tail": tail,
-                "annotator": annotator, "annotation": annotation,
-                "pmid": pmid, "sentence": sentence, "sentence_id": sentence_id})
-    odds_sorted, cre_sorted, ore_sorted = gen_summary_input(detailed_evidence)
-    if (odds_sorted or cre_sorted or ore_sorted):
-        mention1=""
-        mention2=""
-        if odds_sorted:
-            if target[0] == "type_id_name" or target[0] == "type_name":
-                if target[1][2] in odds_sorted["head"]:
-                    mention1 = odds_sorted["head"][2]
-                elif target[1][2] in odds_sorted["tail"]:
-                    mention1 = odds_sorted["tail"][2]
-            if target[0] == "type_id" :
-                if target[1][1] in odds_sorted["head"]:
-                    mention1 = odds_sorted["head"][1]
-                elif target[1][1] in odds_sorted["tail"]:
-                    mention1= odds_sorted["tail"][1]
-            if target[2] == "type_id_name" or target[2] == "type_name":
-                if target[3][2] in odds_sorted["head"]:
-                    mention2 = odds_sorted["head"][2]
-                elif target[3][2] in odds_sorted["tail"]:
-                    mention2= odds_sorted["tail"][2]
-            if target[2] == "type_id" :
-                if target[3][1] in odds_sorted["head"]:
-                    mention2 = odds_sorted["head"][1]
-                elif target[3][1] in odds_sorted["tail"]:
-                    mention2 = odds_sorted["tail"][1]
-            sent1 = "The odds ratio found between " + mention1 + " and " + mention2+ " in PMID: " + str(odds_sorted["pmid"]) + " is " + str(odds_sorted["annotation"][0]) + " (CI: " + str(odds_sorted["annotation"][1]) + ", p-value: "+  str(odds_sorted["annotation"][2])+ "). "
-            sent2 = mention1+ " and " + mention2 + " have an " + str(odds_sorted["annotation"][0])  + " (CI: " + str(odds_sorted["annotation"][1]) + ", p-value: "+  str(odds_sorted["annotation"][2]) + ")"+" odds ratio (PMID: " + str(odds_sorted["pmid"]) + "). "
-            sent10 = "The odds ratio found between " + "<span style='color:#21d59b;font-weight:bold'>" + html.escape(mention1) + "</span>" + " and " + "<span style='color:#21d59b;font-weight:bold'>"+ html.escape(mention2)+ "</span>"+ " in PMID: " + html.escape(str(odds_sorted["pmid"])) + " is " + "<mark style='background-color:#62e0b84d'>" + html.escape(str(odds_sorted["annotation"][0])) + " (CI: " + html.escape(str(odds_sorted["annotation"][1])) + ", p-value: "+  html.escape(str(odds_sorted["annotation"][2]))+ ")." + "</mark>" + " "
-            sent20 = "<span style='color:#21d59b;font-weight:bold'>"+ html.escape(mention1)+ "</span>" +" and " + "<span style='color:#21d59b;font-weight:bold'>" + html.escape(mention2) +"</span>" + " have an " + "<mark style='background-color:#62e0b84d'>" + html.escape(str(odds_sorted["annotation"][0]))  + " (CI: " + html.escape(str(odds_sorted["annotation"][1])) + ", p-value: "+  html.escape(str(odds_sorted["annotation"][2])) + ")"+" odds ratio"  + "</mark>" + " (PMID: " + html.escape(str(odds_sorted["pmid"])) + "). "
-            odds_list = [sent1,sent2]
-            odds_list = random.choice(odds_list)
-            odds_list2 = [sent10,sent20]
-            odds_list2 = random.choice(odds_list2)
-        if cre_sorted:
-            if target[0] == "type_id_name" or target[0] == "type_name":
-                if target[1][2] in cre_sorted["head"]:
-                    mention1 = cre_sorted["head"][2]
-                elif target[1][2] in cre_sorted["tail"]:
-                    mention1= cre_sorted["tail"][2]
-            if target[0] == "type_id" :
-                if target[1][1] in cre_sorted["head"]:
-                    mention1 = cre_sorted["head"][1]
-                elif target[1][1] in cre_sorted["tail"]:
-                    mention1= cre_sorted["tail"][1]
-            if target[2] == "type_id_name" or target[2] == "type_name":
-                if target[3][2] in cre_sorted["head"]:
-                    mention2 = cre_sorted["head"][2]
-                elif target[3][2] in cre_sorted["tail"]:
-                    mention2 = cre_sorted["tail"][2]
-            if target[2] == "type_id" :
-                if target[3][1] in cre_sorted["head"]:
-                    mention2 = cre_sorted["head"][1]
-                elif target[3][1] in cre_sorted["tail"]:
-                    mention2 = cre_sorted["tail"][1]
-            if cre_sorted["head"][0] == "Disease" and (cre_sorted["tail"][0] == "SNP" or cre_sorted["tail"][0] == "ProteinMutation" or cre_sorted["tail"][0] =="CopyNumberVariant" or cre_sorted["tail"][0] == "DNAMutation"):
-                # switch head and tail
-                tmp=mention1
-                mention1=mention2
-                mention2=tmp
-            if cre_sorted["annotation"][0]=="Cause-associated":
-                sent1="We believe that there is a causal relationship between " + str(mention1) + " and " + str(mention2)+ " with a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ". "+ "Here is an excerpt of the literature (PMID: " +str(cre_sorted["pmid"])+")" + ' that captures the relations: ' + '"' + cre_sorted["sentence"] + '"' + "."
-                sent2= "With a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ", we found that " + str(mention1)  + " is a causal variant of " + str(mention2)  + ". " + "This piece of relation is evidenced by the sentence in PMID: " + str(cre_sorted["pmid"]) + ': "'+cre_sorted["sentence"] + '" '
-                sent3= "Based on the sentence (PMID: " +str(cre_sorted["pmid"])+") "+ ': "'+ cre_sorted["sentence"] + '" Our finding indicates that ' + str(mention1) + " is " + "<mark style='background-color:#5f96ff4d'>" + "associated with" + "</mark>" + " " + str(mention2) + " by a confidence of "+'{}'.format(cre_sorted["annotation"][1])+ ". "
-                ## html ##
-                sent10="We believe that there is a " +"<mark style='background-color:#5f96ff4d'>"+  "causal relationship" + "</mark>" + " between " + "<span style='color:#0058ff;font-weight:bold'>"  + html.escape(str(mention1)) +"</span>" +" and " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention2))+"</span>" + " with a " + "<mark style='background-color:#5f96ff4d'>" + "confidence of " + '{}'.format(cre_sorted["annotation"][1])+ "."+ "</mark>" + " Here is an excerpt of the literature (PMID: " + html.escape(str(cre_sorted["pmid"]))+") " + 'that captures the relations: "' +  html.escape(cre_sorted["sentence"]) +'" '
-                sent20= "With a " + "<mark style='background-color:#5f96ff4d'>" + "confidence of " +  html.escape('{}'.format(cre_sorted["annotation"][1]))+"</mark>" +", we found that " +  "<span style='color:#0058ff;font-weight:bold'>" + str(mention1) +"</span>"  + " is a " + "<mark style='background-color:#5f96ff4d'>"+ "causal variant"  + "</mark>" +" of " +  "<span style='color:#0058ff;font-weight:bold'>"  + html.escape(str(mention2)) + "</span>" + ". " + "This piece of relation is evidenced by the sentence in PMID: " +  html.escape(str(cre_sorted["pmid"])) + ': "'+ html.escape(cre_sorted["sentence"]) + '" '
-                sent30= "Based on the sentence (PMID: " + html.escape(str(cre_sorted["pmid"]))+") "+ ': "'+  html.escape(cre_sorted["sentence"]) + '" Our finding indicates that ' +  "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1)) + "</span>" +  " is " + "<mark style='background-color:#5f96ff4d'>" + "associated with" + "</mark>"  + " "  +  "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention2)) + "</span>"  + " by a " + "<mark style='background-color:#5f96ff4d'>"+ "confidence of "+ html.escape('{}'.format(cre_sorted["annotation"][1]))+ "." + "</mark>" + " "
+    def create_passage(self):
+        for passage_type in self.passage_type_list:
+            template_type, term_type_to_term = self.get_template_type_and_term(passage_type)
+            template = random.choice(template_type_to_list[template_type])
+            passage, term_type_to_span_list = get_passage_from_template(template, term_type_to_term)
+            self.type_to_passage_and_term_span[passage_type] = (passage, term_type_to_span_list)
+        return
 
-            if cre_sorted["annotation"][0]=="In-patient":
-                sent1= mention1+ " occurs in some " + mention2 + " patients." " Our finding shows that the confidence of this association is approximately " +  '{}'.format(cre_sorted["annotation"][1])+". "+ "Here is an excerpt of the literature (PMID:" +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent2= "With a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ", we found that " + mention1+" patients "+ "carry " + mention2 +". " "This piece of relation is evidenced by the following sentence in (PMID: " + str(cre_sorted["pmid"]) + '). "' +cre_sorted["sentence"] + '" '
-                sent3= 'As claimed by "'+  cre_sorted["sentence"] +'" PMID: (' + str(cre_sorted["pmid"])+"), we are " +  '{}'.format(cre_sorted["annotation"][1])+ ""+ " sure that " + mention2+" patients show to have " + mention1 + ". "
-                ## html ##
-                sent10=  "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1))+ "</span>" + " "+"<mark style='background-color:#5f96ff4d'>"+ "occurs in" + "</mark>" + " some " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention2))+" " + "</span>"  + "<mark style='background-color:#5f96ff4d'>" + "patients." + "</mark>" + " Our finding shows that the confidence of this association is approximately " +  html.escape('{}'.format(cre_sorted["annotation"][1]))+". "+ "Here is an excerpt of the literature (PMID:" +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent20= "With a " + "<mark style='background-color:#5f96ff4d'>"+ "confidence of " +  html.escape('{}'.format(cre_sorted["annotation"][1]))+ "</mark>" + ", we found that " +  "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1)) + " "+ "</span>"   +"<mark style='background-color:#5f96ff4d'>" + "patients" +" carry" + "</mark>"  +  "<span style='color:#0058ff;font-weight:bold'>" +" " +html.escape(str(mention2)) + "</span>" +". " "This piece of relation is evidenced by the following sentence in (PMID: " + str(cre_sorted["pmid"]) + '). "' +cre_sorted["sentence"] + '" '
-                sent30= 'As claimed by "'+ html.escape(cre_sorted["sentence"]) +'" PMID: (' + html.escape(str(cre_sorted["pmid"]))+"), we are " + "<mark style='background-color:#5f96ff4d'>" + '{}'.format(cre_sorted["annotation"][1])+ ""+ " sure" + "</mark>"+ " that " +  "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention2))+ "</span>"  + " " +"<mark style='background-color:#5f96ff4d'>"+ "patients "  + "show to have" +"</mark>"+ " "+  "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1)) +"</span>"  +". "
-            if cre_sorted["annotation"][0]=="Appositive":
-                sent1= mention1+ "'s relation with " + mention2 + "is presupposed." + " We are " + '{}'.format(cre_sorted["annotation"][1])+ " " + "confidence about this association. " + "Here is an excerpt of the literature (PMID:" +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent2= "It is " +  '{}'.format(cre_sorted["annotation"][1])+" "+  "presupposed that "+ mention1 + " is related to "+ mention2 + " as evidenced by '" + cre_sorted["sentence"] + "' (PMID: "+str(cre_sorted["pmid"])+". "
-                sent3= 'According to the sentence: "' + cre_sorted["sentence"]+ '" (PMID: ' + str(cre_sorted["pmid"])+") " + "The relation between " + mention1 + " and " + mention2 + " contains a presupposition. "
-                ## html ##
-                sent10 =  "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1))+ "</span>"  +"'s relation with " + "<span style='color:#0058ff;font-weight:bold'>"  +  html.escape(str(mention2)) +"</span>" + "is "+ "<mark style='background-color:#5f96ff4d'>" + "presupposed."  + "</marl>"+ " We are " +  "<mark style='background-color:#5f96ff4d'>" + html.escape('{}'.format(cre_sorted["annotation"][1]))+ " " + "confidence" +"</mark>" +" about this association. " + "Here is an excerpt of the literature (PMID:" + html.escape(str(cre_sorted["pmid"]))+") " + 'that captures the relations: "' +  html.escape(cre_sorted["sentence"]) +'" '
-                sent20 = "It is " +  html.escape('{}'.format(cre_sorted["annotation"][1]))+" "+  "<mark style='background-color:#5f96ff4d'>" + "presupposed"+ "</mark>"+" that "+  "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1)) + "</span>" + " is related to "+  "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention2)) + "</span>" +" as evidenced by '" +  html.escape(cre_sorted["sentence"]) + "' (PMID: "+  html.escape(str(cre_sorted["pmid"]))+". "
-                sent30 = 'According to the sentence: "' +  html.escape(cre_sorted["sentence"])+ '" (PMID: ' +  html.escape(str(cre_sorted["pmid"]))+") " + "The relation between " +  "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1)) + "</span>" +" and "+ "<span style='color:#0058ff;font-weight:bold'>"  + html.escape(str(mention2)) +"</span>" + " contains a" + "<mark style='background-color:#5f96ff4d'>"+"presupposition." + "</mark>" + " "
-            rbert_list=[sent1,sent2,sent3]
-            rbert_list=random.choice(rbert_list)
-            rbert_list2=[sent10,sent20,sent30]
-            rbert_list2=random.choice(rbert_list2)
-        if ore_sorted:
-            if len(ore_sorted)==2:
-                if target[0] == "type_id_name" or target[0] == "type_name":
-                    if target[1][2] in ore_sorted[0]["head"]:
-                        mention1 = ore_sorted[0]["head"][2]
-                    elif target[1][2] in ore_sorted[0]["tail"]:
-                        mention1 = ore_sorted[0]["tail"][2]
-                if target[0] == "type_id" :
-                    if target[1][1] in ore_sorted[0]["head"]:
-                        mention1 = ore_sorted[0]["head"][1]
-                    elif target[1][1] in ore_sorted[0]["tail"]:
-                        mention1= ore_sorted[0]["tail"][1]
-                if target[2] == "type_id_name" or target[2] == "type_name":
-                    if target[3][2] in ore_sorted[1]["head"]:
-                        mention2 = ore_sorted[1]["head"][2]
-                    elif target[3][2] in ore_sorted[1]["tail"]:
-                        mention2 = ore_sorted[1]["tail"][2]
-                if target[2] == "type_id" :
-                    if target[3][1] in ore_sorted[1]["head"]:
-                        mention2 = ore_sorted[1]["head"][1]
-                    elif target[3][1] in ore_sorted[1]["tail"]:
-                        mention2 = ore_sorted[1]["tail"][1]
-                relation1 = ' '.join(ore_sorted[0]["annotation"])
-                relation2= ' '.join(ore_sorted[1]["annotation"])
-                sent1='Moreover, there are also relations found between these two entities, which includes the following. "' + relation1 + '" (PMID: ' + ore_sorted[0]["pmid"] +'). "' + relation2+ '" (PMID: ' + ore_sorted[1]["pmid"] +').'
-                sent2='Notably, further relations between ' + mention1 + " and " + mention2 +  ' are present. "' + relation1 + '" (PMID: ' + ore_sorted[0]["pmid"] +'). "' + relation2+ '" (PMID: ' + ore_sorted[1]["pmid"] +').'
-                sent3= 'Between these two entities, prior literature also entails that "' + relation1 + '" (PMID: ' + ore_sorted[0]["pmid"] +') and ' +'"' + relation2+ '" (PMID: ' + ore_sorted[1]["pmid"] +').'
+    def create_text_summary(self):
+        text = ""
+        term_type_to_span_list = defaultdict(lambda: [])
 
-                ## html
-                sent10='Moreover, there are also relations found between these two entities, which includes the following. ' +"<mark style='background-color:#ff83894d'>"+ '"' + html.escape(relation1) + '" (PMID: ' + html.escape(ore_sorted[0]["pmid"]) +').' + "</mark>" + " " +"<mark style='background-color:#ff83894d'>"+'"'+ html.escape(relation2)+ '" (PMID: ' + html.escape(ore_sorted[1]["pmid"]) +').' + "</mark>" + " "
-                sent20='Notably, further relations between ' + "<span style='color:#ff8389;font-weight:bold'>" + html.escape(mention1) +"</span>" + " and " + "<span style='color:#ff8389;font-weight:bold'>" + html.escape(mention2)  +"</span>"+  ' are present. '+  "<mark style='background-color:#ff83894d'>" +'"' + html.escape(relation1) + '" (PMID: ' + html.escape(ore_sorted[0]["pmid"]) +').'  +"</mark>" + " " +"<mark style='background-color:#ff83894d'>" + '"'+html.escape(relation2)+ '" (PMID: ' + html.escape(ore_sorted[1]["pmid"]) +').' + "</mark>"+" "
-                sent30= 'Between these two entities, prior literature also entails that ' + "<mark style='background-color:#ff83894d'>" + '"'+html.escape(relation1) + '" (PMID: ' + html.escape(ore_sorted[0]["pmid"]) +')'+ "</mark>" + ' and ' +"<mark style='background-color:#ff83894d'>"+ '"'+html.escape(relation2)+ '" (PMID: ' + html.escape(ore_sorted[1]["pmid"]) +').' +"</mark>" + " "
+        for passage_type in self.passage_type_list:
+            passage, passage_term_type_to_span_list = self.type_to_passage_and_term_span[passage_type]
+            if not passage:
+                continue
 
-            else:
-                if target[0] == "type_id_name" or target[0] == "type_name":
-                    if target[1][2] in ore_sorted[0]["head"]:
-                        mention1 = ore_sorted[0]["head"][2]
-                    elif target[1][2] in ore_sorted[0]["tail"]:
-                        mention1 = ore_sorted[0]["tail"][2]
-                if target[0] == "type_id" :
-                    if target[1][1] in ore_sorted[0]["head"]:
-                        mention1 = ore_sorted[0]["head"][1]
-                    elif target[1][1] in ore_sorted[0]["tail"]:
-                        mention1= ore_sorted[0]["tail"][1]
-                if target[2] == "type_id_name" or target[2] == "type_name":
-                    if target[3][2] in ore_sorted[1]["head"]:
-                        mention2 = ore_sorted[1]["head"][2]
-                    elif target[3][2] in ore_sorted[1]["tail"]:
-                        mention2 = ore_sorted[1]["tail"][2]
-                if target[2] == "type_id" :
-                    if target[3][1] in ore_sorted[1]["head"]:
-                        mention2 = ore_sorted[1]["head"][1]
-                    elif target[3][1] in ore_sorted[1]["tail"]:
-                        mention2 = ore_sorted[1]["tail"][1]
-                sent1='We also found "'+ ' '.join(ore_sorted[0]["annotation"]) + '" (PMID: ' +  ore_sorted[0]["pmid"] + ". "
-                sent2='"'+ ' '.join(ore_sorted[0]["annotation"]) + '" (PMID: ' +  ore_sorted[0]["pmid"] + ". "
-                sent3="In addition, " +'"'+ ' '.join(ore_sorted[0]["annotation"]) + '" (PMID: ' +  ore_sorted[0]["pmid"] + ". "
+            if text:
+                text += " "
 
-                ## html
-                sent10='We also found ' + "<mark style='background-color:#ff83894d'>"+'"' + html.escape(' '.join(ore_sorted[0]["annotation"])) + '" (PMID: ' +  html.escape(ore_sorted[0]["pmid"]) + "." + "</mark>" +" "
-                sent20="<mark style='background-color:#ff83894d'>"+'"'+ html.escape(' '.join(ore_sorted[0]["annotation"])) + '" (PMID: ' +  html.escape(ore_sorted[0]["pmid"])+ "</mark>" +" "
-                sent30="In addition, " +"<mark style='background-color:#ff83894d'>"+'"'+ html.escape(' '.join(ore_sorted[0]["annotation"])) + '" (PMID: ' +  html.escape(ore_sorted[0]["pmid"]) + "." + "</mark>" +" "
+            for term_type, span_list in passage_term_type_to_span_list.items():
+                for pos_i, pos_j in span_list:
+                    term_type_to_span_list[f"{passage_type}_{term_type}"].append((
+                        len(text) + pos_i, len(text) + pos_j,
+                    ))
 
-            triplet_list=[sent1,sent2,sent3]
-            triplet_list=random.choice(triplet_list)
+            text += passage
 
-            triplet_list2=[sent10,sent20,sent30]
-            triplet_list2=random.choice(triplet_list2)
-        sent1="Based on our search results, relation exists between " +  mention1 + " and " + mention2 + ". "
-        sent2="Relations occur between "+ mention1 + " and " + mention2 + " as shown from our search. The exact sources are demonstrated by PMID. "
-        sent3=mention1 + " and " + mention2 + " relate to each other in the following ways."
-        ## html
-        sent10 = "Based on our search results, relation exists between " + "<b>" +  html.escape(mention1) + "</b>" +" and " + "<b>" + html.escape(mention2) + "</b>" + ". "
-        sent20 = "Relations occur between "+  "<b>"+ html.escape(mention1) + "</b>"+ " and " +  "<b>" + html.escape(mention2) + "</b>" + " as shown from our search. The exact sources are demonstrated by PMID. "
-        sent30 =  "<b>"+html.escape(mention1) + "</b>" + " and " + "<b>" +html.escape(mention2) +"</b>" + " relate to each other in the following ways. "
-        intro_list=[sent1,sent2, sent3]
-        intro_list=random.choice(intro_list)
-        intro_list2=[sent10,sent20, sent30]
-        intro_list2=random.choice(intro_list2)
-        summary=list(intro_list)+list(odds_list)+list(rbert_list)+list(triplet_list)
-        final_summary = ''.join(str(v) for v in summary)
-        final_summary_ht=list(intro_list2)+list(odds_list2)+list(rbert_list2)+list(triplet_list2)
-        final_summary_ht = ''.join(str(v) for v in final_summary_ht)
-        return tuple([final_summary,final_summary_ht])
-    else:
-        final_summary = "There are not enough information for generating a substantial summary for this pair. Please view the following table or re-enter the entity."
-        final_summary_ht = html.escape("There are not enough information for generating a substantial summary for this pair. Please view the following table or re-enter the entity.")
-        return tuple([final_summary,final_summary_ht])
+        self.text_summary = {
+            "text": text,
+            "term_to_span": term_type_to_span_list,
+        }
+        return
 
-## P
-def gen_summary_by_pmid(kb,evidence_id_list,target):
-    combined_mentions = set()
-    detailed_evidence = []
-    odds_list = [""]
-    triplet_list = [""]
-    rbert_list = [""]
-    odds_list2 = [""]
-    triplet_list2 = [""]
-    rbert_list2 = [""]
-    for evidence_id in evidence_id_list:
-        _head, _tail, _annotation_id, _pmid, sentence_id = kb.get_evidence_by_id(
-        evidence_id, return_annotation=False, return_sentence=False)
-        head, tail, (annotator, annotation), pmid, sentence = kb.get_evidence_by_id(
-            evidence_id, return_annotation=True, return_sentence=True)
-        if pmid == target:
-            detailed_evidence.append({
-            "head": head, "tail": tail,
-            "annotator": annotator, "annotation": annotation,
-            "pmid": pmid, "sentence": sentence, "sentence_id": sentence_id})
-    odds_sorted, cre_sorted, ore_sorted = gen_summary_input(detailed_evidence)
-    if (odds_sorted or cre_sorted or ore_sorted):
-        if odds_sorted:
-            mention1=odds_sorted["head"][2]
-            mention2=odds_sorted["tail"][2]
-            combined_mentions.add(mention1)
-            combined_mentions.add(mention2)
-            sent1="The odds ratio found between " + mention1 + " and " + mention2+ " in PMID: " + str(odds_sorted["pmid"]) + " is " + str(odds_sorted["annotation"][0]) + " (CI: " + str(odds_sorted["annotation"][1]) + ", p-value: "+  str(odds_sorted["annotation"][2])+ "). "
-            sent2=mention1+ " and " + mention2 + " have an " + str(odds_sorted["annotation"][0])  + " (CI: " + str(odds_sorted["annotation"][1]) + ", p-value: "+  str(odds_sorted["annotation"][2]) + ")"+" odds ratio (PMID: " + str(odds_sorted["pmid"]) + "). "
-            odds_list=[sent1,sent2]
-            odds_list=random.choice(odds_list)
-            ## html
-            sent10="The odds ratio found between " +"<span style='color:#21d59b;font-weight:bold'>" + html.escape(mention1) + "</span>" +" and " + "<span style='color:#21d59b;font-weight:bold'>" + html.escape(mention2) +"</span>" + " in PMID: " + html.escape(str(odds_sorted["pmid"])) + " is " + "<mark style='background-color:#62e0b84d'>" + html.escape(str(odds_sorted["annotation"][0])) + " (CI: " + html.escape(str(odds_sorted["annotation"][1])) + ", p-value: "+  html.escape(str(odds_sorted["annotation"][2]))+ ")." + "</mark>" + " "
-            sent20="<span style='color:#21d59b;font-weight:bold'>" + html.escape(mention1) + "</span>" +" and " + "<span style='color:#21d59b;font-weight:bold'>" + html.escape(mention2)  + "</span>" +" have an " + "<mark style='background-color:#62e0b84d'>" + str(odds_sorted["annotation"][0])  + " (CI: " + html.escape(str(odds_sorted["annotation"][1])) + ", p-value: "+  html.escape(str(odds_sorted["annotation"][2])) + ")"+" odds ratio" + "</mark>" + ". "
-            odds_list2=[sent10,sent20]
-            odds_list2=random.choice(odds_list2)
-        if cre_sorted:
-            mention1=cre_sorted["head"][2]
-            mention2=cre_sorted["tail"][2]
-            combined_mentions.add(mention1)
-            combined_mentions.add(mention2)
-            if cre_sorted["head"][0] == "Disease" and (cre_sorted["tail"][0] == "SNP" or cre_sorted["tail"][0] == "ProteinMutation" or cre_sorted["tail"][0] =="CopyNumberVariant" or cre_sorted["tail"][0] == "DNAMutation"):
-                # switch head and tail
-                tmp=mention1
-                mention1=mention2
-                mention2=tmp
-            if cre_sorted["annotation"][0]=="Cause-associated":
-                sent1="We believe that there is a causal relationship between " +  str(mention1) +" and " + str(mention2)+ " with a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ". "+ "Here is an excerpt of the literature (PMID: " +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent2= "With a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ", we found that " + str(mention1)  + " is a causal variant of " + str(mention2)  + ". " + "This piece of relation is evidenced by the sentence in PMID: " + str(cre_sorted["pmid"]) + ': "'+cre_sorted["sentence"] + '" '
-                sent3= "Based on the sentence (PMID: " +str(cre_sorted["pmid"])+")"+ ': "'+ cre_sorted["sentence"] + '" Our finding indicates that ' + str(mention1) + " is associated with " + str(mention2) + " by a confidence of "+'{}'.format(cre_sorted["annotation"][1])+ ". "
+    def create_html_summary(self):
+        # legend
+        legend_html_list = []
+        for passage_type in self.passage_type_list:
+            span_class = f"{passage_type}_entity"
+            span_style = span_class_to_style[span_class]
+            legend_html = f"<span style='{span_style}'> &mdash; {html.escape(passage_type)} </span>"
+            legend_html_list.append(legend_html)
+        legend_html = "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;".join(legend_html_list)
+        del legend_html_list
 
-            ## html
-                sent10="We believe that there is a " + "<mark style='background-color:#5f96ff4d'>"+ "causal relationship" + "</mark>"  + " between " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1)) + "</span>" +" and " + "<span style='color:#0058ff;font-weight:bold'>"  +html.escape(str(mention2)) +"</span>" + " with a " + "<mark style='background-color:#5f96ff4d'>" + "confidence of " +  html.escape('{}'.format(cre_sorted["annotation"][1]))+ "." + "</mark>"+ " " + "Here is an excerpt of the literature (PMID: " + html.escape(str(cre_sorted["pmid"]))+") " + 'that captures the relations: "' +  html.escape(cre_sorted["sentence"]) +'" '
-                sent20= "With a " + "<mark style='background-color:#5f96ff4d'>" + "confidence of " +  html.escape('{}'.format(cre_sorted["annotation"][1]))+ "</mark>"  +", we found that " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1))  + "</span>"  + " is a " + "<mark style='background-color:#5f96ff4d'>" "causal variant" + "</mark>" + " of " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention2))  + "</span>"  + ". " + "This piece of relation is evidenced by the sentence in PMID: " +  html.escape(str(cre_sorted["pmid"])) + ': "'+ html.escape(cre_sorted["sentence"]) + '" '
-                sent30= "Based on the sentence (PMID: " + html.escape(str(cre_sorted["pmid"]))+")"+ ': "'+  html.escape(cre_sorted["sentence"]) + '" Our finding indicates that ' + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1)) + "</span>" + " is " + "<mark style='background-color:#5f96ff4d'>" + "associated with" + "</mark>"+ " " +"<span style='color:#0058ff;font-weight:bold'>" +  html.escape(str(mention2))   + "</span>" + " by a " + "<mark style='background-color:#5f96ff4d'>" + "confidence of "+ html.escape('{}'.format(cre_sorted["annotation"][1]))+ "." + "</mark>" + " "
+        # passage
+        passage_html_list = []
 
+        passage_type_to_highlight_term_type_set = {
+            "query": {"entity", "entity1", "entity2"},
+            "odds_ratio": {"variant", "disease", "OR", "CI", "p-value"},
+            "cre": {"variant", "disease", "sentence"},
+            "ore": {"triplet", "triplet1", "triplet2"},
+        }
+        entity_term_type_set = {"entity", "entity1", "entity2", "variant", "disease"}
 
-            if cre_sorted["annotation"][0]=="In-patient":
-                sent1= mention1+ " occurs in some " + mention2 + " patients." " Our finidng shows that the confidence of this association is approximately " + '{}'.format(cre_sorted["annotation"][1])+". "+ "Here is an excerpt of the literature (PMID: " +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent2= "With a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ", we found that " + mention1+" patients "+ "carry " + mention2 +"." "This piece of relation is evidenced by the sentence in PMID: " + str(cre_sorted["pmid"]) + ': "'+cre_sorted["sentence"] + '" '
-                sent3= "As claimed by '"+ cre_sorted["sentence"] +"' PMID: (" +str(cre_sorted["pmid"])+"), we are " + '{}'.format(cre_sorted["annotation"][1])+ " sure that " + mention2+" patients show to have " + mention1 + ". "
+        for passage_type in self.passage_type_list:
+            passage, term_type_to_span_list = self.type_to_passage_and_term_span[passage_type]
+            if not passage:
+                continue
 
-                ## html
-                sent10= "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention1)+ "</span>" + " " +"<mark style='background-color:#5f96ff4d'>"+ " "  + "occurs in" + "</mark>" +" some " + "<span style='color:#0058ff;font-weight:bold'>"+ html.escape(mention2) +"</span>" +  " " +"<mark style='background-color:#5f96ff4d'>"  +"patients." +  "<mark>"  +" Our finidng shows that the " + "<mark style='background-color:#5f96ff4d'>"+ "confidence of this association is approximately " +  html.escape('{}'.format(cre_sorted["annotation"][1]))+"." + "</mark>" + " " + "Here is an excerpt of the literature (PMID: " + html.escape(str(cre_sorted["pmid"]))+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent20= "With a " +"<mark style='background-color:#5f96ff4d'>"+"confidence of " +  html.escape('{}'.format(cre_sorted["annotation"][1]))+ "</mark>"+", we found that " + "<span style='color:#0058ff;font-weight:bold'>" +  html.escape(mention1)+ "</span>" +" " +"<mark style='background-color:#5f96ff4d'>" +"patients "+ "carry" + "</mark>"  +" " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention2) + "</span>" +"." "This piece of relation is evidenced by the sentence in PMID: " +  html.escape(str(cre_sorted["pmid"])) + ': "'+ html.escape(cre_sorted["sentence"]) + '" '
-                sent30= "As claimed by '"+  html.escape(cre_sorted["sentence"]) +"' PMID: (" + html.escape(str(cre_sorted["pmid"]))+"), we are " +  html.escape('{}'.format(cre_sorted["annotation"][1]))+ " sure that " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention2)+ "</span>" + " " +  "<mark style='background-color:#5f96ff4d'>" + "patients show to have" + "</mark>" + " "  +"<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention2) + "." + "</span>" + " "
+            entity_term_span_prefix = f"<span style='{span_class_to_style[passage_type + '_entity']}'>"
+            other_term_span_prefix = f"<span style='{span_class_to_style[passage_type]}'>"
+            term_span_suffix = "</span>"
 
+            # get sorted list of spans that should be highlighted
+            highlight_term_type_set = passage_type_to_highlight_term_type_set[passage_type]
+            span_type_list = [
+                (span, term_type)
+                for term_type, span_list in term_type_to_span_list.items()
+                if term_type in highlight_term_type_set
+                for span in span_list
+            ]
+            span_type_list = sorted(span_type_list)
 
-            if cre_sorted["annotation"][0]=="Appositive":
-                sent1= mention1+ "'s relation with " + mention2 + "is presupposed." + " We are " + '{}'.format(cre_sorted["annotation"][1])+ " " + "confidence about this association. " + "Here is an excerpt of the literature (PMID:" +str(cre_sorted["pmid"])+") " + "that captures the relations: '" + cre_sorted["sentence"] +"' "
-                sent2= "It is " + '{}'.format(cre_sorted["annotation"][1])+" "+  "presupposed that "+ mention1 + " is related to "+ mention2 + " as evidenced by '" + cre_sorted["sentence"] + "' (PMID: "+str(cre_sorted["pmid"])+". "
-                sent3= "According to the sentence: '" + cre_sorted["sentence"]+ "' (PMID: " + str(cre_sorted["pmid"])+") " + "The relation between " + mention1 + " and " + mention2 + " contains a presupposition."
+            # replace term spans in passage with html span tags
+            passage_html = ""
+            last_j = 0
+            for (pos_i, pos_j), term_type in span_type_list:
+                # text before the term span
+                passage_html += html.escape(passage[last_j:pos_i])
+                last_j = pos_j
 
-                ## html
-                sent10= "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention1)+ "'s"+ "</span>" + " relation with " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention2) + "</span>"  + "is " + "<mark style='background-color:#5f96ff4d'>" + "presupposed."+ "</mark>" + " We are " + "<mark style='background-color:#5f96ff4d'>"+html.escape('{}'.format(cre_sorted["annotation"][1]))+ " " + "confidence" + "</mark>" + " about this association. " + "Here is an excerpt of the literature (PMID:" +html.escape(str(cre_sorted["pmid"]))+") " + "that captures the relations: '" + html.escape(cre_sorted["sentence"]) +"' "
-                sent20= "It is " +"<mark style='background-color:#5f96ff4d'>"+ html.escape('{}'.format(cre_sorted["annotation"][1]))+ " "+  "presupposed"  +"</mark>" + "that "+ "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention1) + "</span>" + " is related to "+ html.escape(mention2) + " as evidenced by '" + html.escape(cre_sorted["sentence"]) + "' (PMID: "+html.escape(str(cre_sorted["pmid"]))+". "
-                sent30= "According to the sentence: '" + html.escape(cre_sorted["sentence"])+ "' (PMID: " + html.escape(str(cre_sorted["pmid"]))+") " + "The relation between " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention1) + "</span>"   +" and " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention2) +  "</span>"  + " contains a " +"<mark style='background-color:#5f96ff4d'>"+ "presupposition." + "</mark>"  +" "
+                # term span
+                if term_type in entity_term_type_set:
+                    term_span_prefix = entity_term_span_prefix
+                else:
+                    term_span_prefix = other_term_span_prefix
+                passage_html += term_span_prefix + html.escape(passage[pos_i:pos_j]) + term_span_suffix
 
-            combined_mentions.add(mention1)
-            combined_mentions.add(mention2)
-            rbert_list=[sent1,sent2,sent3]
-            rbert_list=random.choice(rbert_list)
-            rbert_list2=[sent10,sent20,sent30]
-            rbert_list2=random.choice(rbert_list2)
-        if ore_sorted:
-            mention1=""
-            mention2=""
-            mention3=""
-            mention4=""
-            if len(ore_sorted)==2:
-                mention1=ore_sorted[0]["head"][2]
-                mention2=ore_sorted[0]["tail"][2]
-                mention3=ore_sorted[1]["head"][2]
-                mention4=ore_sorted[1]["tail"][2]
-                combined_mentions.add(mention1)
-                combined_mentions.add(mention2)
-                combined_mentions.add(mention3)
-                combined_mentions.add(mention4)
-                relation1 = ' '.join(ore_sorted[0]["annotation"])
-                relation2= ' '.join(ore_sorted[1]["annotation"])
-                sent1='Moreover, there are also other relations found in this PMID: ' + target+ ', which includes the following. "' + relation1 + '." "' + relation2+ '." '
-                sent2='Notably, in this PMID, further relations between these two entities are discovered. "' + relation1 + '." "' + relation2+ '." '
-                sent3= 'PMID: ' + target + ' also entails relations: "' + relation1 + '" and "'+ relation2 +'."'
+            passage_html += html.escape(passage[last_j:])
 
+            passage_html_list.append(passage_html)
 
-                ## html
-                sent10 ='Moreover, there are also other relations found in this PMID: ' + html.escape(target)+ ', which includes the following. "' + "<mark style='background-color:#ff83894d'>" + html.escape(relation1) + "."  + "</mark>" + " " + "<mark style='background-color:#ff83894d'>"  + '"'+ html.escape(relation2)+ '."'+ "</mark>" + " "
-                sent20 ='Notably, in this PMID, further relations between these two entities are discovered.'+ " " +  "<mark style='background-color:#ff83894d'>" +'"' + html.escape(relation1) + '."' +"</mark>" + " " + "<mark style='background-color:#ff83894d'>" + '"' + html.escape(relation2)+ '."' +"</mark>" + " "
-                sent30 = 'PMID: ' + html.escape(target) + ' also entails relations:' + " " +"<mark style='background-color:#ff83894d'>"+ '"' + html.escape(relation1) + '"' +"</mark>" + " and " + "<mark style='background-color:#ff83894d'>"+ " " +'"'+ html.escape(relation2) +'."' + "</mark>"
-            else:
-                mention1=ore_sorted[0]["head"][2]
-                mention2=ore_sorted[0]["tail"][2]
-                combined_mentions.add(mention1)
-                combined_mentions.add(mention2)
-                sent1='In this PMID, we also found "'+ ' '.join(ore_sorted[0]["annotation"]) + '." '
-                sent2='"'+ ' '.join(ore_sorted[0]["annotation"]) + '." '
-                sent3="In addition, " +'"'+ ' '.join(ore_sorted[0]["annotation"]) + '." '
+        passage_html = " ".join(passage_html_list)
+        del passage_html_list
 
-                ## html
-                sent10 ='In this PMID, we also found' + " "+"<mark style='background-color:#ff83894d'>" +'"'+ html.escape(' '.join(ore_sorted[0]["annotation"])) + '."' + "</mark>" + " "
-                sent20 ="<mark style='background-color:#ff83894d'>"+ '"'+ html.escape(' '.join(ore_sorted[0]["annotation"])) + '."' +"</mark>"+ " "
-                sent30 ="In addition, " + "<mark style='background-color:#ff83894d'>" +'"'+ html.escape(' '.join(ore_sorted[0]["annotation"])) + '."'+ "</mark>" + " "
-            triplet_list=[sent1,sent2,sent3]
-            triplet_list=random.choice(triplet_list)
-            triplet_list2=[sent10,sent20,sent30]
-            triplet_list2=random.choice(triplet_list2)
-        final_combine=list(combined_mentions)
-        final_combine= ", ".join(final_combine[:-1]) + " and " + final_combine[-1]
-        sent1= "PMID: " + target + " showcases that relations exist between these prominent mentions: " + final_combine + ". "
-        sent2= "In PMID: " + target + ", our search results indicate that relations presented in " + final_combine + ". "
-        sent3= "For " + final_combine, " in PMID: "+ target + ", some relations are extracted. "
-        ## html
-        sent10= "PMID: " +"<b>" + target + "</b>" +" showcases that relations exist between these prominent mentions: " +"<span style='color:#f99600;font-weight:bold'>" +final_combine + "." + "</span>" + " "
-        sent20= "In PMID: " + "<b>" + target +"</b>"+ ", our search results indicate that relations presented in " + "<span style='color:#f99600;font-weight:bold'>" + final_combine + "</span>"  +"." + " "
-        sent30= "For " + "<span style='color:#f99600;font-weight:bold'>" + final_combine + "</span>" +  " in PMID: "+"<b>" +target +"</b>" + ", some relations are extracted. "
-        intro_list=[sent1,sent2, sent3]
-        intro_list=random.choice(intro_list)
-        summary=list(intro_list)+list(odds_list)+list(rbert_list)+list(triplet_list)
-        final_summary = ''.join(str(v) for v in summary)
-        intro_list2=[sent10,sent20, sent30]
-        intro_list2=random.choice(intro_list2)
-        final_summary_ht=list(intro_list2)+list(odds_list2)+list(rbert_list2)+list(triplet_list2)
-        final_summary_ht = ''.join(str(v) for v in final_summary_ht)
-        return tuple([final_summary,final_summary_ht])
-    else:
-        final_summary = "There are not enough information for generating a substantial summary for this PMID. Please view the following table or re-enter the entity."
-        final_summary_ht = html.escape("There are not enough information for generating a substantial summary for this PMID. Please view the following table or re-enter the PMID.")
-        return tuple([final_summary,final_summary_ht])
+        # full summary
+        self.html_summary = legend_html + "<br />" + passage_html
+        return
 
-## ABP
-def gen_summary_by_pmid_pair(kb,evidence_id_list,target):
-    detailed_evidence = []
-    odds_list = [""]
-    triplet_list = [""]
-    rbert_list = [""]
-    odds_list2 = [""]
-    triplet_list2 = [""]
-    rbert_list2 = [""]
-    for evidence_id in evidence_id_list:
-        _head, _tail, _annotation_id, _pmid, sentence_id = kb.get_evidence_by_id(
-        evidence_id, return_annotation=False, return_sentence=False)
-        head, tail, (annotator, annotation), pmid, sentence = kb.get_evidence_by_id(
-            evidence_id, return_annotation=True, return_sentence=True)
-        ## name name combo
-        if (target[0] == "type_id_name" or target[0] == "type_name") and (target[2] == "type_id_name" or target[2] == "type_name") and pmid==target[4]:
-            if (target[1][2]==head[2] or target[1][2]==tail[2]) and (target[3][2]==head[2] or target[3][2]==tail[2]):
-                detailed_evidence.append({
-                "head": head, "tail": tail,
-                "annotator": annotator, "annotation": annotation,
-                "pmid": pmid, "sentence": sentence, "sentence_id": sentence_id})
-        ## id id combo
-        elif (target[0] == "type_id") and (target[2] == "type_id") and pmid==target[4]:
-            if (target[1][1]==head[1] or target[1][1]==tail[1]) and (target[3][1]==head[1] or target[3][1]==tail[1]):
-                detailed_evidence.append({
-                "head": head, "tail": tail,
-                "annotator": annotator, "annotation": annotation,
-                "pmid": pmid, "sentence": sentence, "sentence_id": sentence_id})
-        ## id name combo
-        elif (target[0] == "type_id") and (target[2] == "type_id_name" or target[2] == "type_name") and pmid==target[4]:
-            if (target[1][1]==head[1] or target[1][1]==tail[1]) and (target[3][2]==head[2] or target[3][2]==tail[2]):
-                detailed_evidence.append({
-                "head": head, "tail": tail,
-                "annotator": annotator, "annotation": annotation,
-                "pmid": pmid, "sentence": sentence, "sentence_id": sentence_id})
-        ## name id combo
-        elif (target[0] == "type_id_name" or target[0] == "type_name") and (target[2] == "type_id") and pmid==target[4]:
-            if (target[1][2]==head[2] or target[1][2]==tail[2]) and (target[3][1]==head[1] or target[3][1]==tail[1]):
-                detailed_evidence.append({
-                "head": head, "tail": tail,
-                "annotator": annotator, "annotation": annotation,
-                "pmid": pmid, "sentence": sentence, "sentence_id": sentence_id})
-    odds_sorted, cre_sorted, ore_sorted = gen_summary_input(detailed_evidence)
-    if (odds_sorted or cre_sorted or ore_sorted):
-        mention1=""
-        mention2=""
-        if odds_sorted:
-            if target[0] == "type_id_name" or target[0] == "type_name":
-                if target[1][2] in odds_sorted["head"]:
-                    mention1 = odds_sorted["head"][2]
-                elif target[1][2] in odds_sorted["tail"]:
-                    mention1 = odds_sorted["tail"][2]
-            if target[0] == "type_id" :
-                if target[1][1] in odds_sorted["head"]:
-                    mention1 = odds_sorted["head"][1]
-                elif target[1][1] in odds_sorted["tail"]:
-                    mention1= odds_sorted["tail"][1]
-            if target[2] == "type_id_name" or target[2] == "type_name":
-                if target[3][2] in odds_sorted["head"]:
-                    mention2 = odds_sorted["head"][2]
-                elif target[3][2] in odds_sorted["tail"]:
-                    mention2= odds_sorted["tail"][2]
-            if target[2] == "type_id" :
-                if target[3][1] in odds_sorted["head"]:
-                    mention2 = odds_sorted["head"][1]
-                elif target[3][1] in odds_sorted["tail"]:
-                    mention2 = odds_sorted["tail"][1]
-            sent1="The odds ratio found between " + mention1 + " and " + mention2+ " is " + str(odds_sorted["annotation"][0]) + " (CI: " + str(odds_sorted["annotation"][1]) + ", p-value: "+  str(odds_sorted["annotation"][2])+ "). "
-            sent2=mention1+ " and " + mention2 + " have an " + str(odds_sorted["annotation"][0])  + " (CI: " + str(odds_sorted["annotation"][1]) + ", p-value: "+  str(odds_sorted["annotation"][2]) + ")"+" odds ratio. "
-            odds_list=[sent1,sent2]
-            odds_list=random.choice(odds_list)
-            ## html
-            sent10 ="The odds ratio found between " + "<span style='color:#21d59b;font-weight:bold'>"  + html.escape(mention1) + "</span>" + " and " + "<span style='color:#21d59b;font-weight:bold'>" + html.escape(mention2)+  "</span>"  +" is " + "<mark style='background-color:#62e0b84d'>" + html.escape(str(odds_sorted["annotation"][0])) + " (CI: " + html.escape(str(odds_sorted["annotation"][1])) + ", p-value: "+  html.escape(str(odds_sorted["annotation"][2]))+ ")." + "</mark>" + " "
-            sent20 ="<span style='color:#21d59b;font-weight:bold'>"+ html.escape(mention1)+ "</span>"  +" and " +"<span style='color:#21d59b;font-weight:bold'>" +html.escape(mention2) + "</span>"  +" have an " + "<mark style='background-color:#62e0b84d'>"  + html.escape(str(odds_sorted["annotation"][0]))  + " (CI: " + html.escape(str(odds_sorted["annotation"][1])) + ", p-value: "+  html.escape(str(odds_sorted["annotation"][2])) + ")"+" odds ratio." + "</mark>" + " "
-            odds_list2=[sent10,sent20]
-            odds_list2=random.choice(odds_list2)
-        if cre_sorted:
-            if target[0] == "type_id_name" or target[0] == "type_name":
-                if target[1][2] in cre_sorted["head"]:
-                    mention1 = cre_sorted["head"][2]
-                elif target[1][2] in cre_sorted["tail"]:
-                    mention1= cre_sorted["tail"][2]
-            if target[0] == "type_id" :
-                if target[1][1] in cre_sorted["head"]:
-                    mention1 = cre_sorted["head"][1]
-                elif target[1][1] in cre_sorted["tail"]:
-                    mention1= cre_sorted["tail"][1]
-            if target[2] == "type_id_name" or target[2] == "type_name":
-                if target[3][2] in cre_sorted["head"]:
-                    mention2 = cre_sorted["head"][2]
-                elif target[3][2] in cre_sorted["tail"]:
-                    mention2 = cre_sorted["tail"][2]
-            if target[2] == "type_id" :
-                if target[3][1] in cre_sorted["head"]:
-                    mention2 = cre_sorted["head"][1]
-                elif target[3][1] in cre_sorted["tail"]:
-                    mention2 = cre_sorted["tail"][1]
-            if cre_sorted["head"][0] == "Disease" and (cre_sorted["tail"][0] == "SNP" or cre_sorted["tail"][0] == "ProteinMutation" or cre_sorted["tail"][0] =="CopyNumberVariant" or cre_sorted["tail"][0] == "DNAMutation"):
-                # switch head and tail
-                tmp=mention1
-                mention1=mention2
-                mention2=tmp
-            if cre_sorted["annotation"][0]=="Cause-associated":
-                sent1="We believe that there is a causal relationship between " +  str(mention1) +" and " + str(mention2)+ " with a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ". "+ "Here is an excerpt of the literature (PMID: " +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent2= "With a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ", we found that " + str(mention1)  + " is a causal variant of " + str(mention2)  + ". " + "This piece of relation is evidenced by the sentence in PMID: " + str(cre_sorted["pmid"]) + ': "'+cre_sorted["sentence"] + '" '
-                sent3= "Based on the sentence (PMID: " +str(cre_sorted["pmid"])+") "+ ': "'+ cre_sorted["sentence"] + '" Our finding indicates that ' + str(mention1) + " is associated with " + str(mention2) + " by a confidence of "+'{}'.format(cre_sorted["annotation"][1])+ ". "
-
-                ## html
-                sent10="We believe that there is a " +"<mark style='background-color:#5f96ff4d'>"+ "causal relationship" + "</mark>" + " between " + "<span style='color:#0058ff;font-weight:bold'>"+ html.escape(str(mention1))+ "</span>" +" and " + "<span style='color:#0058ff;font-weight:bold'>"+ html.escape(str(mention2))+ "</span>" + " with " + "<mark style='background-color:#5f96ff4d'>"+ "a confidence of " + html.escape('{}'.format(cre_sorted["annotation"][1]))+ "." + "</mark>" + " "+  "Here is an excerpt of the literature (PMID: " +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent20= "With a " + "<mark style='background-color:#5f96ff4d'>"+ "confidence of " + html.escape('{}'.format(cre_sorted["annotation"][1]))+ "</mark>" +", we found that " +"<span style='color:#0058ff;font-weight:bold'>"+ html.escape(str(mention1)) + "</span>" + " is a " + "<mark style='background-color:#5f96ff4d'>"+ "causal variant" + "</mark>" + " of " +"<span style='color:#0058ff;font-weight:bold'>"+ html.escape(str(mention2))+"</span>"  + ". " + "This piece of relation is evidenced by the sentence in PMID: " + str(cre_sorted["pmid"]) + ': "'+cre_sorted["sentence"] + '" '
-                sent30= "Based on the sentence (PMID: " + html.escape(str(cre_sorted["pmid"]))+") "+ ': "'+ html.escape(cre_sorted["sentence"]) + '" Our finding indicates that ' + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(str(mention1)) + "</span>"+ " is " +"<mark style='background-color:#5f96ff4d'>"+ "associated with" + "</mark>"+ " " +"<span style='color:#0058ff;font-weight:bold'>"+ html.escape(str(mention2)) + "</span>" +" by " +"<mark style='background-color:#5f96ff4d'>"+ "a confidence of "+'{}'.format(cre_sorted["annotation"][1])+ "." + "</mark>" + " "
-
-            if cre_sorted["annotation"][0]=="In-patient":
-                sent1= mention1+ " occurs in some " + mention2 + " patients." " Our finidng shows that the confidence of this association is approximately " + '{}'.format(cre_sorted["annotation"][1])+". "+ "Here is an excerpt of the literature (PMID:" +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent2= "With a confidence of " + '{}'.format(cre_sorted["annotation"][1])+ ", we found that " + mention1+" patients "+ "carry " + mention2 +"." "This piece of relation is evidenced by the sentence in PMID: " + str(cre_sorted["pmid"]) + ': "'+cre_sorted["sentence"] + '" '
-                sent3= 'As claimed by "'+ cre_sorted["sentence"] +'" ' + '{}'.format(cre_sorted["annotation"][1])+ ""+ " sure that " + mention2+" patients show to have " + mention1 + ". "
-                ## html
-                sent10= "<span style='color:#0058ff;font-weight:bold'>"+ html.escape(mention1)+ "</span>"  +" occurs in some " + "<span style='color:#0058ff;font-weight:bold'>"+ html.escape(mention2) +"</span>"  +" patients." " Our finidng shows that the confidence of this association is approximately " + html.escape('{}'.format(cre_sorted["annotation"][1]))+". "+ "Here is an excerpt of the literature (PMID:" +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + html.escape(cre_sorted["sentence"]) +'" '
-                sent20= "With a " +"<mark style='background-color:#5f96ff4d'>"+ "confidence of " + html.escape('{}'.format(cre_sorted["annotation"][1]))+"</mark>" + ", we found that " +"<span style='color:#0058ff;font-weight:bold'>"+ html.escape(mention1)+"</span>" +" " + "<mark style='background-color:#5f96ff4d'>"+ "patients "+ "carry" + "</mark>" + " " +"<span style='color:#0058ff;font-weight:bold'>"+ html.escape(mention2) +"."+"</mark>" +  "This piece of relation is evidenced by the sentence in PMID: " + html.escape(str(cre_sorted["pmid"])) + ': "'+html.escape(cre_sorted["sentence"]) + '" '
-                sent30= 'As claimed by "'+ html.escape(cre_sorted["sentence"]) +'" ' +"<mark style='background-color:#5f96ff4d'>"+ html.escape('{}'.format(cre_sorted["annotation"][1]))+ " sure" +"</mark>" + " "  +"that" + " "+ "<span style='color:#0058ff;font-weight:bold'>"+ html.escape(mention2)+"</span>" +" " + "<mark style='background-color:#5f96ff4d'>"+ "patients show to have" +"</mark>" +" " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention1) + "." + "</span>" + " "
-
-            if cre_sorted["annotation"][0]=="Appositive":
-                sent1= mention1+ "'s relation with " + mention2 + "is presupposed." + " We are " + '{}'.format(cre_sorted["annotation"][1])+ " " + "confidence about this association. " + "Here is an excerpt of the literature (PMID:" +str(cre_sorted["pmid"])+") " + 'that captures the relations: "' + cre_sorted["sentence"] +'" '
-                sent2= "It is " + '{}'.format(cre_sorted["annotation"][1])+" "+  "presupposed that "+ mention1 + " is related to "+ mention2 + ' as evidenced by "' + cre_sorted["sentence"] + "' (PMID: "+str(cre_sorted["pmid"])+'." '
-                sent3= 'According to the sentence: "' + cre_sorted["sentence"]+ "' (PMID: " + str(cre_sorted["pmid"])+") " + "The relation between " + mention1 + " and " + mention2 + " contains a presupposition."
-
-                ## html
-                sent10= "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention1)+ "'s" + "</span>" +" relation with " + "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention2) + "</span>" + "is" + "<mark style='background-color:#ff83894d'>"+"presupposed." + "</mark>" +" We are " + "<mark style='background-color:#5f96ff4d'>"+html.escape('{}'.format(cre_sorted["annotation"][1]))+ " " + "confident" +"</mark>"+ " about this association. " + "Here is an excerpt of the literature (PMID:" +html.escape(str(cre_sorted["pmid"]))+") " + 'that captures the relations: "' + html.escape(cre_sorted["sentence"]) +'" '
-                sent20= "It is " + "<mark style='background-color:#5f96ff4d'>"+ html.escape('{}'.format(cre_sorted["annotation"][1]))+" "+  "presupposed" + "</mark>" +" that "+ "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention1) +  "</span>"  +" is related to "+ "<span style='color:#0058ff;font-weight:bold'>" + html.escape(mention2) + "</span>" + ' as evidenced by "' + html.escape(cre_sorted["sentence"]) + "' (PMID: "+html.escape(str(cre_sorted["pmid"]))+'." '
-                sent30= 'According to the sentence: "' + html.escape(cre_sorted["sentence"])+ "' (PMID: " + html.escape(str(cre_sorted["pmid"]))+") " + "The relation between " + "<span style='color:#0058ff;font-weight:bold'>"+ html.escape(mention1) + "</span>" +" and " +"<span style='color:#0058ff;font-weight:bold'>"+html.escape(mention2) +  "</span>" +" contains a " + "<mark style='background-color:#ff83894d'>"+"presupposition." + "</mark>" + " "
-            rbert_list=[sent1,sent2,sent3]
-            rbert_list=random.choice(rbert_list)
-            rbert_list2=[sent10,sent20,sent30]
-            rbert_list2=random.choice(rbert_list2)
-        if ore_sorted:
-            if len(ore_sorted)==2:
-                if target[0] == "type_id_name" or target[0] == "type_name":
-                    if target[1][2] in ore_sorted[0]["head"]:
-                        mention1 = ore_sorted[0]["head"][2]
-                    elif target[1][2] in ore_sorted[0]["tail"]:
-                        mention1 = ore_sorted[0]["tail"][2]
-                if target[0] == "type_id" :
-                    if target[1][1] in ore_sorted[0]["head"]:
-                        mention1 = ore_sorted[0]["head"][1]
-                    elif target[1][1] in ore_sorted[0]["tail"]:
-                        mention1= ore_sorted[0]["tail"][1]
-                if target[2] == "type_id_name" or target[2] == "type_name":
-                    if target[3][2] in ore_sorted[1]["head"]:
-                        mention2 = ore_sorted[1]["head"][2]
-                    elif target[3][2] in ore_sorted[1]["tail"]:
-                        mention2 = ore_sorted[1]["tail"][2]
-                if target[2] == "type_id" :
-                    if target[3][1] in ore_sorted[1]["head"]:
-                        mention2 = ore_sorted[1]["head"][1]
-                    elif target[3][1] in ore_sorted[1]["tail"]:
-                        mention2 = ore_sorted[1]["tail"][1]
-                relation1 = ' '.join(ore_sorted[0]["annotation"])
-                relation2= ' '.join(ore_sorted[1]["annotation"])
-                sent1='Moreover, there are also other relations found in this PMID: ' + target[4]+ ', which includes the following. "' + relation1 + '." "' + relation2+ '." '
-                sent2='Notably, in this PMID, further relations between these two entities are discovered. "' + relation1 + '." "' + relation2+ '." '
-                sent3= 'PMID: ' + target[4] + ' also entails relations: "' + relation1 + '"' + " and " + '"' + relation2 +'."'
-               ## html
-                sent10='Moreover, there are also other relations found in this PMID: ' + html.escape(target[4])+ ', which includes the following. ' + "<mark style='background-color:#ff83894d'>" +'"' + html.escape(relation1) + '."' + "</mark>" + " " + "<mark style='background-color:#ff83894d'>" +  '"' + html.escape(relation2)+ '."' + "</mark>" + " "
-                sent20='Notably, in this PMID, further relations between these two entities are discovered. ' + "<mark style='background-color:#ff83894d'>" + '"' + html.escape(relation1) + '."' + "</mark>"+ " " +"<mark style='background-color:#ff83894d'>"+  '"' + html.escape(relation2)+ '."' + "</mark>" + " "
-                sent30= 'PMID: ' + html.escape(target[4]) + ' also entails relations: '  + "<mark style='background-color:#ff83894d'>"   + '"'+ html.escape(relation1) + '"' + "</mark>"  +" and " + "<mark style='background-color:#ff83894d'>" + '"' + html.escape(relation2) +'."'  + "</mark>" + " "
-            else:
-                if target[0] == "type_id_name" or target[0] == "type_name":
-                    if target[1][2] in ore_sorted[0]["head"]:
-                        mention1 = ore_sorted[0]["head"][2]
-                    elif target[1][2] in ore_sorted[0]["tail"]:
-                        mention1 = ore_sorted[0]["tail"][2]
-                if target[0] == "type_id" :
-                    if target[1][1] in ore_sorted[0]["head"]:
-                        mention1 = ore_sorted[0]["head"][1]
-                    elif target[1][1] in ore_sorted[0]["tail"]:
-                        mention1= ore_sorted[0]["tail"][1]
-                if target[2] == "type_id_name" or target[2] == "type_name":
-                    if target[3][2] in ore_sorted[0]["head"]:
-                        mention2 = ore_sorted[0]["head"][2]
-                    elif target[3][2] in ore_sorted[1]["tail"]:
-                        mention2 = ore_sorted[0]["tail"][2]
-                if target[2] == "type_id" :
-                    if target[3][1] in ore_sorted[1]["head"]:
-                        mention2 = ore_sorted[0]["head"][1]
-                    elif target[3][1] in ore_sorted[1]["tail"]:
-                        mention2 = ore_sorted[0]["tail"][1]
-                sent1='We also found "'+ ' '.join(ore_sorted[0]["annotation"]) + '"' + ". "
-                sent2='"'+ ' '.join(ore_sorted[0]["annotation"]) + '"' + ". "
-                sent3="In addition, " +'"'+ ' '.join(ore_sorted[0]["annotation"]) + '"' + ". "
-
-                ## html
-                sent10='We also found'+"<mark style='background-color:#ff83894d'>"+' "' + html.escape(' '.join(ore_sorted[0]["annotation"])) + '"'+ "." + "</mark>" + " "
-                sent20="<mark style='background-color:#ff83894d'>"+'"'+ ' '.join(ore_sorted[0]["annotation"]) + '"' + "." + "</mark>" + " "
-                sent30="In addition, "+ "<mark style='background-color:#ff83894d'>" +'"'+ html.escape(' '.join(ore_sorted[0]["annotation"])) + '"' + "." + "</mark>" + " "
-
-            triplet_list=[sent1,sent2,sent3]
-            triplet_list=random.choice(triplet_list)
-            triplet_list2=[sent10,sent20,sent30]
-            triplet_list2=random.choice(triplet_list2)
-        sent1="Based on our search results, relation exists between " +mention1 + " and " + mention2 + " in PMID: " + target[4] + ". "
-        sent2="Relations occur between "+ mention1 + " and " + mention2 + " as shown from our search for PMID: " + target[4] + ". "
-        sent3=mention1 + " and " + mention2 + " relate to each other in PMID: " + target[4] +". "
-
-        ## html
-        sent10 = "Based on our search results, relation exists between " + "<b>"+  html.escape(mention1)+ "</b>" + " and " + "<b>"+ html.escape(mention2) + "</b>" + " in PMID: " + "<b>"+ html.escape(target[4]) + "</b>"+ ". "
-        sent20 ="Relations occur between "+ "<b>"+ html.escape(mention1) + "</b>" + " and " + "<b>"+ html.escape(mention2)+ "</b>"  + " as shown from our search for PMID: " + "<b>"+ html.escape(target[4]) + "</b>"+ ". "
-        sent30 = "<b>"+html.escape(mention1) + "</b>" + " and "+ "<b>" + html.escape(mention2)+ "</b>"  + " relate to each other in PMID: " + "<b>"+ target[4]+ "</b>" +". "
-
-        intro_list=[sent1,sent2, sent3]
-        intro_list=random.choice(intro_list)
-        summary=list(intro_list)+list(odds_list)+list(rbert_list)+list(triplet_list)
-        final_summary = ''.join(str(v) for v in summary)
-        intro_list2=[sent10,sent20, sent30]
-        intro_list2=random.choice(intro_list2)
-        final_summary_ht=list(intro_list2)+list(odds_list2)+list(rbert_list2)+list(triplet_list2)
-        final_summary_ht = ''.join(str(v) for v in final_summary_ht)
-        return tuple([final_summary,final_summary_ht])
-    else:
-        final_summary = "There are not enough information for generating a substantial summary for this PMID and pair. Please view the following table or re-enter the entity."
-        final_summary_ht = html.escape("There are not enough information for generating a substantial summary for this PMID and pair. Please view the following table or re-enter the PMID.")
-        return tuple([final_summary,final_summary_ht])
-
-def get_summary (kb,evidence_id_list, target, query_filter):
-    if query_filter == "A":
-        return(gen_summary_by_entity(kb,evidence_id_list,target))
-
-    elif query_filter == "AB":
-        return(gen_summary_by_pair(kb,evidence_id_list,target))
-
-    elif query_filter == "P":
-        return(gen_summary_by_pmid(kb,evidence_id_list,target))
-
-    elif query_filter == "AP":
-        return(gen_summary_by_entity_pmid(kb,evidence_id_list,target))
-
-    elif query_filter == "ABP":
-        return(gen_summary_by_pmid_pair(kb,evidence_id_list,target))
-
-def test_summary(kb_dir):
-
-    kb = KB(kb_dir)
-    kb.load_data()
-    kb.load_index()
-
-    # test none
-    evidence_id_list = [1869807,1869813,343203,343227,398056,444473,459084,554087,601608,601614,636431,1292876,1875988,801997,1292888,1842892,2632957,2632962,2632996,3094696]
-    # print(gen_summary_by_entity(kb=kb,evidence_id_list=evidence_id_list, target=("type_id",("Disease", "MESH:D012871", "skin lesions"))))
-    text=get_summary(kb,evidence_id_list, target=None, query_filter="X")
-    print(text)
-
-    # test A
-    evidence_id_list = [928292,1395158,2449403,2449407,2449411,2584152,227365,570299,570313,570323,900159,900183,928286,4836,21298,21692,25199,34845,35464,35468,35493,35494,36495,2467,3086,4837,10339,10839,14928,15549,16764,19499,20412]
-    # print(gen_summary_by_entity(kb=kb,evidence_id_list=evidence_id_list, target=("type_id",("Disease", "MESH:D012871", "skin lesions"))))
-    text=get_summary(kb,evidence_id_list, target=("type_id",("Disease", "MESH:D012871", "skin lesions")), query_filter="A")
-    print(text)
-
-    # test AB
-    evidence_id_list = [444474,636438,697193,726676,802003,881275,962387,989533,1016015,1016021,801999,2632963,2632997,2640407]
-    # evidence_id_list = [2449403,2449404,2449405,2449406,2449353,2449364,2449365,2449366,2449367,2449382]
-    # print(gen_summary_by_pair(kb=kb,evidence_id_list=evidence_id_list, target=("type_name",("SNP", "RS#:4925", "rs4925"),"type_id",("Disease", "MESH:D012871", "skin lesions"))))
-    text=get_summary(kb,evidence_id_list, target=("type_name",("Disease", "???", "tumors"),"type_id",("Disease", "HGVS:p.V600E", "???")), query_filter="AB")
-    print(text)
-
-    # test pmid
-    evidence_id_list = [3561262,3561263,3561264,3561265,3561242,3561246,3561250,3561254,3561258,3561241,3561266]
-    # print(gen_summary_by_pmid(kb=kb,evidence_id_list=evidence_id_list, target="22494505"))
-    text =get_summary(kb,evidence_id_list, target="22494505", query_filter="P")
-    print(text)
-
-    # test AP
-    evidence_id_list = [928292,1395158,2449403,2449407,2449411,2584152,227365,570299,570313,570323,900159,900183,928286,4836,21298,21692,25199,34845,35464,35468,35493,35494,36495,2467,3086,4837,10339,10839,14928,15549,16764,19499,20412]
-    # print(gen_summary_by_entity_pmid(kb=kb,evidence_id_list=evidence_id_list, target=("type_name",("Disease", "MESH:D012871", "skin lesions"),"23644288")))
-    text = get_summary(kb,evidence_id_list,target=("type_name",("Disease", "MESH:D012871", "skin lesions"),"23644288"), query_filter="AP")
-    print(text)
-
-    # test ABP
-    evidence_id_list = [2449403,2449404,2449405,2449406,2449353,2449364,2449365,2449366,2449367,2449382]
-    # print(gen_summary_by_pmid_pair(kb=kb,evidence_id_list=evidence_id_list, target=("type_name",("SNP", "RS#:4925", "rs4925"),"type_id",("Disease", "MESH:D012871", "skin lesions"),"29323258")))
-    text=get_summary(kb,evidence_id_list,("type_name",("SNP", "RS#:4925", "rs4925"),"type_id",("Disease", "MESH:D012871", "skin lesions"),"29323258"), query_filter="ABP")
-    print(text)
 
 def main():
-    # from kb_utils import KB
     parser = argparse.ArgumentParser()
-    parser.add_argument("--kb_dir", type=str, default="/volume/summary/data")
+    parser.add_argument("--tmp", type=str)
     arg = parser.parse_args()
-    test_summary(arg.kb_dir)
+    for key, value in vars(arg).items():
+        if value is not None:
+            logger.info(f"[{key}] {value}")
     return
+
 
 if __name__ == "__main__":
     main()
