@@ -575,13 +575,10 @@ class KB:
             ),
         )
         :param pmid: None / str
-        :return: {
-            "head": ...
-            "tail": [
-                pmid: [(annotation_file_offset, annotation_score), ...],
-                ...
-            ]
-        }
+        :return: [
+            pmid: [(annotation_file_offset, annotation_score), ...],
+            ...
+        ]
         """
 
         if e1_spec and e2_spec:
