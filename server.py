@@ -576,8 +576,10 @@ class Rel:
         # query paper and annotation id, score from kb
         pmid_to_ann = kb.query_pmid_to_annotation_list(arg["e1_spec"], arg["e2_spec"], arg["pmid"])
         papers = len(pmid_to_ann)
+        relations = sum(len(ann_list) for _pmid, ann_list in pmid_to_ann.items())
         self.statistics["papers_before_pagination"] = papers
-        logger.info(f"Before pagination: {papers:,} papers")
+        self.statistics["relations_before_pagination"] = relations
+        logger.info(f"Before pagination: {papers:,} papers; {relations:,} relations")
 
         self.paper_list = [
             Paper(pmid, aid_score_list)
@@ -870,10 +872,6 @@ def query_rel():
 
     response = {
         "url_argument": rel.str_arg,
-        "summary": {
-            "text_summary": rel.text_summary,
-            "html_summary": rel.html_summary,
-        },
         "result_statistics": rel.statistics,
         "paper_list": [
             {
@@ -884,6 +882,10 @@ def query_rel():
             }
             for paper in rel.paper_list
         ],
+        "summary": {
+            "text_summary": rel.text_summary,
+            "html_summary": rel.html_summary,
+        },
     }
     return json.dumps(response)
 
