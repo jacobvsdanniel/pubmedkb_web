@@ -1058,17 +1058,17 @@ def main():
         if value is not None:
             logger.info(f"[{key}] {value}")
 
-    # global v2g
-    # v2g = V2G(arg.variant_dir, arg.gene_dir)
-    #
-    # global kb
-    # kb = KB(arg.kb_dir)
-    # kb.load_nen()
-    # kb.load_data()
-    # kb.load_index()
-    #
-    # global kb_type
-    # kb_type = arg.kb_type
+    global v2g
+    v2g = V2G(arg.variant_dir, arg.gene_dir)
+
+    global kb
+    kb = KB(arg.kb_dir)
+    kb.load_nen()
+    kb.load_data()
+    kb.load_index()
+
+    global kb_type
+    kb_type = arg.kb_type
 
     global kb_meta
     kb_meta = Meta(arg.meta_dir)
