@@ -615,6 +615,50 @@ class KB:
         return pmid_to_ann
 
 
+class PaperNEN:
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self.pmid_to_offset = {}
+        self.data_file = None
+
+        if data_dir:
+            self.load_data()
+        return
+
+    def load_data(self):
+        data_file = os.path.join(self.data_dir, f"pmid_value.jsonl")
+        self.data_file = open(data_file, "r", encoding="utf8")
+
+        key_file = os.path.join(self.data_dir, f"pmid_key.jsonl")
+        logger.info(f"Reading {key_file}")
+        self.pmid_to_offset = {}
+
+        with open(key_file, "r", encoding="utf8") as f:
+            for line in f:
+                key, value_offset = json.loads(line[:-1])
+                self.pmid_to_offset[key] = value_offset
+
+        papers = len(self.pmid_to_offset)
+        logger.info(f"Read {papers:,} papers")
+        return
+
+    def query_data(self, pmid):
+        try:
+            offset = self.pmid_to_offset[pmid]
+        except KeyError:
+            return {
+                "pmid": pmid,
+                "title": "",
+                "abstract": "",
+                "sentence_list": [],
+            }
+
+        self.data_file.seek(offset)
+        paper_datum = self.data_file.readline()[:-1]
+        paper_datum = json.loads(paper_datum)
+        return paper_datum
+
+
 def get_normalized_journal_name(name):
     name = unicodedata.normalize("NFKC", name)
     name = name.lower()

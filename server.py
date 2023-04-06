@@ -10,7 +10,7 @@ from collections import defaultdict
 
 from flask import Flask, render_template, request
 
-from kb_utils import query_variant, V2G, KB, Meta
+from kb_utils import query_variant, V2G, KB, Meta, PaperNEN, ner_gvdc_mapping
 from summary_utils import Summary
 
 app = Flask(__name__)
@@ -31,6 +31,7 @@ csv.register_dialect(
 v2g = V2G(None, None)
 kb = KB(None)
 kb_meta = Meta(None)
+paper_nen = PaperNEN(None)
 kb_type = None
 show_aid = False
 
@@ -53,6 +54,11 @@ def serve_var():
 @app.route("/rel")
 def serve_rel():
     return render_template("rel.html")
+
+
+@app.route("/paper")
+def serve_paper():
+    return render_template("paper.html")
 
 
 @app.route("/v2g")
@@ -904,6 +910,135 @@ def query_rel_statistics():
     return json.dumps(response)
 
 
+@app.route("/run_paper", methods=["POST"])
+def run_paper():
+    arg = json.loads(request.data)
+    query = arg.get("query", "")
+
+    meta = kb_meta.get_meta_by_pmid(query)
+    paper = paper_nen.query_data(query)
+
+    # pmid
+    pmid = paper["pmid"]
+    pmid_html = '<div style="font-size: 20px; line-height: 200%;">' \
+                f'PMID: <a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{pmid}</a>' \
+                '</div>'
+
+    # meta
+    meta_html = [
+        f"Title: {meta['title']}",
+        f"Author: {meta['author']}",
+        f"Year: {meta['year']}",
+        f"Journal: {meta['journal']}",
+        f"PubMed Citation: {meta['citation']}",
+    ]
+    meta_html = "<br />".join(
+        html.escape(term)
+        for term in meta_html
+    )
+    meta_html = f'<div style="font-size: 20px; line-height: 200%;">{meta_html}</div>'
+
+    # ner
+    sentence_html_list = []
+    span_class_to_style = {
+        "gene": "font-weight: bold; color: #21d59b;",
+        "mutation": "font-weight: bold; color: #0058ff;",
+        "disease": "font-weight: bold; color: #ff8389;",
+        "drug": "font-weight: bold;",
+    }
+
+    for sentence_datum in paper["sentence_list"]:
+        sentence = sentence_datum["sentence"]
+        mention_list = sentence_datum["mention"]
+        sentence_html = ""
+        last_j = 0
+
+        for mention in mention_list:
+            name = mention["name"]
+            _type = mention["type"]
+            i = mention["offset"]
+            j = i + len(name)
+
+            span_style = span_class_to_style[ner_gvdc_mapping[_type]]
+            span_html = f"<span style='{span_style}'>{html.escape(name)}</span>"
+            sentence_html += html.escape(sentence[last_j:i]) + span_html
+            last_j = j
+
+        sentence_html += html.escape(sentence[last_j:])
+        sentence_html_list.append(sentence_html)
+
+    ner_html = " ".join(sentence_html_list)
+    ner_html = f'<div style="font-size: 18px; line-height: 200%;">{ner_html}</div>'
+
+    # nen
+    nen_html = []
+
+    for si, sentence_datum in enumerate(paper["sentence_list"]):
+        mention_list = sentence_datum["mention"]
+        if not mention_list:
+            continue
+
+        sentence_html = f'<div style="font-size: 18px; line-height: 200%;">{sentence_html_list[si]}</div>'
+        sentence_html += \
+            "<table><tr>" \
+            + "<th>Name</th>" \
+            + "<th>Type</th>" \
+            + "<th>ID</th>" \
+            + "<th>Offset</th>" \
+            + "</tr>"
+
+        for mention in mention_list:
+            name = mention["name"]
+            _type = mention["type"]
+            id_list = mention["id"]
+            offset = mention["offset"]
+
+            name = html.escape(name)
+            _type = html.escape(_type)
+            _id = html.escape(", ".join(id_list))
+
+            sentence_html += \
+                f"<tr><td>{name}</td>" \
+                + f"<td>{_type}</td>" \
+                + f"<td>{_id}</td>" \
+                + f"<td>{offset}</td></tr>"
+
+        sentence_html += "</table>"
+        nen_html.append(sentence_html)
+
+    nen_html = "<br /><br />".join(nen_html)
+
+    # combined result
+    result = pmid_html \
+             + meta_html \
+             + "<br /><br /><br />" \
+             + ner_html \
+             + "<br /><br /><br />" \
+             + nen_html \
+             + "<br /><br /><br /><br /><br />"
+
+    response = {
+        "result": result,
+    }
+    return json.dumps(response)
+
+
+@app.route("/query_paper")
+def query_paper():
+    arg = request.args
+    query = arg.get("query", "")
+
+    paper = paper_nen.query_data(query)
+    meta = kb_meta.get_meta_by_pmid(query)
+
+    response = {
+        "url_argument": arg,
+        "meta": meta,
+        "paper": paper,
+    }
+    return json.dumps(response)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
@@ -912,6 +1047,8 @@ def main():
     parser.add_argument("--variant_dir", default="data/variant")
     parser.add_argument("--gene_dir", default="data/gene")
     parser.add_argument("--meta_dir", default="data/meta")
+    parser.add_argument("--paper_dir", default="data/paper")
+
     parser.add_argument("--kb_type", default="relation", choices=["relation", "cooccur"])
     parser.add_argument("--kb_dir", default="pubmedKB-PTC/1_319_disk")
     parser.add_argument("--show_aid", default="false")
@@ -921,20 +1058,23 @@ def main():
         if value is not None:
             logger.info(f"[{key}] {value}")
 
-    global v2g
-    v2g = V2G(arg.variant_dir, arg.gene_dir)
-
-    global kb
-    kb = KB(arg.kb_dir)
-    kb.load_nen()
-    kb.load_data()
-    kb.load_index()
-
-    global kb_type
-    kb_type = arg.kb_type
+    # global v2g
+    # v2g = V2G(arg.variant_dir, arg.gene_dir)
+    #
+    # global kb
+    # kb = KB(arg.kb_dir)
+    # kb.load_nen()
+    # kb.load_data()
+    # kb.load_index()
+    #
+    # global kb_type
+    # kb_type = arg.kb_type
 
     global kb_meta
     kb_meta = Meta(arg.meta_dir)
+
+    global paper_nen
+    paper_nen = PaperNEN(arg.paper_dir)
 
     global show_aid
     show_aid = arg.show_aid == "true"
