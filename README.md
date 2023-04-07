@@ -37,12 +37,12 @@ Dependencies
 | :-: | :-: | :-: |
 | [gene](https://drive.google.com/file/d/1OX629I7fS_mvPbJ_AgQvPUhZ9MX6XWxA/view?usp=share_link) | id, name correspondence | 226 MB (52 MB) |
 | [variant](https://drive.google.com/file/d/1Uf74lZHYs4yB3bCmmyv3tjokoTfLAkLi/view?usp=share_link) | id, name, gene correspondence | 133 MB (28 MB) |
-| [paper](https://drive.google.com/file/d/17AUaMe0w3xJq3rr0Njs1tok2y3RS5tQ2/view?usp=sharing) | title, author, year, journal, citation, IF | 8.6 GB (1.6 GB) |
+| [meta](https://drive.google.com/file/d/17AUaMe0w3xJq3rr0Njs1tok2y3RS5tQ2/view?usp=sharing) | title, author, year, journal, citation, IF | 8.6 GB (1.6 GB) |
 
 | Relation data | Relations           | # papers with relations* | Section  | Disk size (zip size) | Memory usage |
 | :-:                            | :-:                  | :-:     | :-:      | :-:                  | :-:          |
 | Full KB    | odds ratio, causal, open relations, etc. | 8.5 M | abstract | 12 GB (2.2 GB) | 15 GB |
-| [Partial KB](https://drive.google.com/file/d/14zmuFfNKcTwiSiJPlSUUCwuYJFbq_ouo/view?usp=sharing) | odds ratio, causal, open relations, etc. | 0.3 M | abstract | 485 MB (88 MB) | 10 GB |
+| [Partial KB](https://drive.google.com/file/d/14zmuFfNKcTwiSiJPlSUUCwuYJFbq_ouo/view?usp=sharing) | odds ratio, causal, open relations, etc. | 0.3 M | abstract | 487 MB (88 MB) | 10 GB |
 
 *We processed all 35M PubMed citations dumped on 2023/02/17.
 
