@@ -38,6 +38,7 @@ Dependencies
 | [gene](https://drive.google.com/file/d/1OX629I7fS_mvPbJ_AgQvPUhZ9MX6XWxA/view?usp=share_link) | id, name correspondence | 226 MB (52 MB) |
 | [variant](https://drive.google.com/file/d/1Uf74lZHYs4yB3bCmmyv3tjokoTfLAkLi/view?usp=share_link) | id, name, gene correspondence | 133 MB (28 MB) |
 | [meta](https://drive.google.com/file/d/17AUaMe0w3xJq3rr0Njs1tok2y3RS5tQ2/view?usp=sharing) | title, author, year, journal, citation, IF | 8.6 GB (1.6 GB) |
+| paper | title, abstract, entity | 99 GB (13GB) |
 
 | Relation data | Relations           | # papers with relations* | Section  | Disk size (zip size) | Memory usage |
 | :-:                            | :-:                  | :-:     | :-:      | :-:                  | :-:          |
@@ -70,11 +71,12 @@ git checkout 2e79a4bbf4258c88dda1ddc7f4e4f3ee37443896
 
 ```bash
 python server.py \
---variant_dir [variant_directory] \
 --gene_dir [gene_directory] \
+--variant_dir [variant_directory] \
+--meta_dir [meta_directory] \
+--paper_dir [paper_directory] \
 --kb_dir [KB_directory] \
 --kb_type relation \
---meta_dir [paper_meta_directory] \
 --port 8000
 ```
 
