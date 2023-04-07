@@ -408,7 +408,7 @@ class KB:
         """
 
         :param sentence_file_offset: int
-        :return: [sentence: str, mention_list: list]
+        :return: [sentence_index: int, sentence: str, mention_list: list]
             mention: [name: str, type: str, id_list: list, start_position_in_sentence: int]
         """
         self.data["sentence"].seek(sentence_file_offset)

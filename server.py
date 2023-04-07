@@ -411,7 +411,7 @@ class Paper:
 
         self.aid_score_list = aid_score_list
 
-        self.sentence_list = []
+        self.sentence_index_to_sentence_mention = {}
         self.annotator_to_relation = {}
 
         self.relevance = 0
@@ -432,17 +432,15 @@ class Paper:
             annotator_list = ["co_occurrence"]
 
         annotator_to_relation = {annotator: [] for annotator in annotator_list}
-        sid_to_index = dict()
-        sentence_list = []
+        sid_to_sentence_index = dict()
+        sentence_index_to_sentence_mention = dict()
 
         for aid, _ann_score in self.aid_score_list:
             sid, h_list, t_list, annotator, annotation = kb.get_annotation(aid)
 
             # sentence and mention
-            if sid not in sid_to_index:
-                sid_to_index[sid] = len(sentence_list)
-
-                sentence, mention_list = kb.get_sentence(sid)
+            if sid not in sid_to_sentence_index:
+                sentence_index, sentence, mention_list = kb.get_sentence(sid)
                 mention_list = [
                     {
                         "name": name,
@@ -453,12 +451,13 @@ class Paper:
                     for name, _type, id_list, pos in mention_list
                 ]
 
-                sentence_list.append({
+                sid_to_sentence_index[sid] = sentence_index
+                sentence_index_to_sentence_mention[sentence_index] = {
                     "sentence": sentence,
                     "mention": mention_list,
-                })
+                }
 
-            sentence_index = sid_to_index[sid]
+            sentence_index = sid_to_sentence_index[sid]
 
             # relation
             if annotator == "rbert_cre":
@@ -504,7 +503,7 @@ class Paper:
             )
             annotator_to_relation["rbert_cre"] = [relation_list[i] for i in index_list]
 
-        self.sentence_list = sentence_list
+        self.sentence_index_to_sentence_mention = sentence_index_to_sentence_mention
         self.annotator_to_relation = annotator_to_relation
         return
 
@@ -663,7 +662,7 @@ class Rel:
         annotator_to_relations = defaultdict(lambda: 0)
 
         for paper in self.paper_list:
-            sentences += len(paper.sentence_list)
+            sentences += len(paper.sentence_index_to_sentence_mention)
             relations += len(paper.aid_score_list)
             for annotator, relation_list in paper.annotator_to_relation.items():
                 annotator_to_relations[annotator] += len(relation_list)
@@ -764,7 +763,7 @@ def run_rel():
 
     for paper in rel.paper_list:
         pmid = paper.pmid
-        sentence_list = paper.sentence_list
+        sentence_index_to_sentence_mention = paper.sentence_index_to_sentence_mention
         annotator_to_relation = paper.annotator_to_relation
 
         for annotator, relation_list in annotator_to_relation.items():
@@ -777,7 +776,7 @@ def run_rel():
                 sentence_index = relation["sentence_index"]
                 aid = relation["annotation_id"]
 
-                sentence_data = sentence_list[sentence_index]
+                sentence_data = sentence_index_to_sentence_mention[sentence_index]
                 sentence = sentence_data["sentence"]
                 mention_list = sentence_data["mention"]
 
@@ -883,7 +882,7 @@ def query_rel():
             {
                 "pmid": paper.pmid,
                 "meta": paper.meta,
-                "sentence_list": paper.sentence_list,
+                "sentence_data": paper.sentence_index_to_sentence_mention,
                 "annotator_to_relation": paper.annotator_to_relation,
             }
             for paper in rel.paper_list

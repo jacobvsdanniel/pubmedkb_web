@@ -805,7 +805,7 @@ class Summary:
 
                 # variant and disease
                 si = relation["sentence_index"]
-                sentence_datum = paper.sentence_list[si]
+                sentence_datum = paper.sentence_index_to_sentence_mention[si]
                 mention_list = sentence_datum["mention"]
 
                 hi = relation["head_mention"][0]
@@ -839,7 +839,7 @@ class Summary:
 
                 # sentence
                 si = relation["sentence_index"]
-                sentence_datum = paper.sentence_list[si]
+                sentence_datum = paper.sentence_index_to_sentence_mention[si]
                 term_type_to_term["sentence"] = sentence_datum["sentence"]
                 mention_list = sentence_datum["mention"]
 
