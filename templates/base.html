@@ -7,6 +7,13 @@
 
 <body>
 
+<script>
+    var loc = window.location;
+    if (loc.href.slice(-1) != "/" ) {
+        loc.replace(loc.href + "/");
+    }
+</script>
+
 <div style="font-size: 16px; font-family: Helvetica, sans-serif; line-height: 1.5;">
     pubmedKB API:&nbsp;&nbsp;<a href="home">home</a><br />
     <a href="name_to_id_alias">Name-to-ID-Alias</a>&nbsp;&nbsp;<a href="id_to_name">ID-to-Name</a><br />

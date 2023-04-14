@@ -10,7 +10,8 @@ from collections import defaultdict
 
 from flask import Flask, render_template, request
 
-from kb_utils import query_variant, V2G, KB, Meta, PaperNEN, ner_gvdc_mapping
+from kb_utils import query_variant, V2G, KB, Meta, PaperKB, GeVarToGLOF
+from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from summary_utils import Summary
 
 app = Flask(__name__)
@@ -31,19 +32,26 @@ csv.register_dialect(
 v2g = V2G(None, None)
 kb = KB(None)
 kb_meta = Meta(None)
-paper_nen = PaperNEN(None)
+paper_nen = PaperKB(None)
+paper_glof = PaperKB(None)
+entity_glof = GeVarToGLOF(None)
 kb_type = None
 show_aid = False
 
 
 @app.route("/")
+def serve_base():
+    return render_template("base.html")
+
+
+@app.route("/home")
 def serve_home():
     return render_template("home.html")
 
 
-@app.route("/nen")
-def serve_nen():
-    return render_template("nen.html")
+@app.route("/name_to_id_alias")
+def serve_name_to_id_alias():
+    return render_template("name_to_id_alias.html")
 
 
 @app.route("/var")
@@ -61,13 +69,28 @@ def serve_paper():
     return render_template("paper.html")
 
 
-@app.route("/v2g")
-def serve_v2g():
-    return render_template("v2g.html")
+@app.route("/rs_hgvs_gene")
+def serve_rs_hgvs_gene():
+    return render_template("rs_hgvs_gene.html")
 
 
-@app.route("/run_nen", methods=["POST"])
-def run_nen():
+@app.route("/pmid_glof")
+def serve_pmid_glof():
+    return render_template("pmid_glof.html")
+
+
+@app.route("/ent_glof")
+def serve_ent_glof():
+    return render_template("ent_glof.html")
+
+
+@app.route("/id_to_name")
+def serve_id_to_name():
+    return render_template("id_to_name.html")
+
+
+@app.route("/run_name_to_id_alias", methods=["POST"])
+def run_name_to_id_alias():
     data = json.loads(request.data)
 
     query = data["query"].strip()
@@ -142,8 +165,8 @@ def run_nen():
     return json.dumps(response)
 
 
-@app.route("/query_nen")
-def query_nen():
+@app.route("/query_name_to_id_alias")
+def query_name_to_id_alias():
     response = {}
 
     # url argument
@@ -224,6 +247,67 @@ def query_nen():
             logger.info(f"({_type}, {_id}, {name}, {id_frequency}): alias_list={alias_frequency_list}")
 
         response["match_list"].append(match)
+
+    return json.dumps(response)
+
+
+@app.route("/run_id_to_name", methods=["POST"])
+def run_id_to_name():
+    arg = json.loads(request.data)
+    _type = arg.get("type", "").strip()
+    _id = arg.get("id", "").strip()
+    top_k = 20
+
+    logger.info(f"[query] type={_type} id={_id}")
+
+    # expand the umbrella type to real types and query KB
+    name_frequency_list = []
+    for _type in entity_type_to_real_type_mapping.get(_type, [_type]):
+        name_frequency_list += kb.nen.get_aliases_by_id(_type, _id, max_aliases=top_k)
+    name_frequency_list = sorted(name_frequency_list, key=lambda nf: -nf[1])[:top_k]
+
+    # table html
+    table_html = f"<table><tr><th>Name</th><th>Frequency</th></tr>"
+
+    for name, frequency in name_frequency_list:
+        name_html = html.escape(name)
+        frequency_html = html.escape(f"{frequency:,}")
+        table_html += f"<tr><td>{name_html}</td><td>{frequency_html}</td></tr>"
+
+    table_html += "</table>"
+
+    result = table_html + "<br /><br /><br /><br /><br />"
+
+    response = {"result": result}
+    return json.dumps(response)
+
+
+@app.route("/query_id_to_name")
+def query_id_to_name():
+    arg = request.args
+    _type = arg.get("type", "")
+    _id = arg.get("id", "")
+    top_k = 20
+
+    response = {}
+
+    # url argument
+    _type = arg.get("type", "").strip()
+    _id = arg.get("id", "").strip()
+
+    response["url_argument"] = {
+        "type": _type,
+        "id": _id,
+    }
+
+    logger.info(f"[query] type={_type} id={_id}")
+
+    # expand the umbrella type to real types and query KB
+    name_frequency_list = []
+    for _type in entity_type_to_real_type_mapping.get(_type, [_type]):
+        name_frequency_list += kb.nen.get_aliases_by_id(_type, _id, max_aliases=top_k)
+    name_frequency_list = sorted(name_frequency_list, key=lambda nf: -nf[1])[:top_k]
+    response["name_frequency_list"] = name_frequency_list
 
     return json.dumps(response)
 
@@ -344,8 +428,8 @@ def query_var():
     return json.dumps(response)
 
 
-@app.route("/run_v2g", methods=["POST"])
-def run_v2g():
+@app.route("/run_rs_hgvs_gene", methods=["POST"])
+def run_rs_hgvs_gene():
     data = json.loads(request.data)
     query = data["query"].strip()
     logger.info(f"query={query}")
@@ -380,8 +464,8 @@ def run_v2g():
     return json.dumps(response)
 
 
-@app.route("/query_v2g")
-def query_v2g():
+@app.route("/query_rs_hgvs_gene")
+def query_rs_hgvs_gene():
     response = {}
 
     # url argument
@@ -1038,42 +1122,284 @@ def query_paper():
     return json.dumps(response)
 
 
+def get_sorted_nonoverlap_mention_list(mention_list, glof_mention_list):
+    # sort mention list and remove overlap
+    if len(mention_list) > 1:
+        mention_list = sorted(mention_list, key=lambda m: m["offset"])
+        clean_mention_list = [mention_list[0]]
+        for mention in mention_list[1:]:
+            last_mention = clean_mention_list[-1]
+            last_offset = last_mention["offset"] + len(last_mention["name"])
+            if mention["offset"] >= last_offset:
+                clean_mention_list.append(mention)
+        mention_list = clean_mention_list
+
+    # sort glof mention list and remove overlap
+    if len(glof_mention_list) > 1:
+        glof_mention_list = sorted(glof_mention_list, key=lambda m: m["offset"])
+        clean_mention_list = [glof_mention_list[0]]
+        for mention in glof_mention_list[1:]:
+            last_mention = clean_mention_list[-1]
+            last_offset = last_mention["offset"] + len(last_mention["name"])
+            if mention["offset"] >= last_offset:
+                clean_mention_list.append(mention)
+        glof_mention_list = clean_mention_list
+
+    # remove glof mentions that overlap with normal mentions
+    if mention_list and glof_mention_list:
+        mention_index_set = {
+            i
+            for mention in mention_list
+            for i in range(mention["offset"], mention["offset"] + len(mention["name"]))
+        }
+        clean_mention_list = []
+        for mention in glof_mention_list:
+            if all(
+                i not in mention_index_set
+                for i in range(mention["offset"], mention["offset"] + len(mention["name"]))
+            ):
+                clean_mention_list.append(mention)
+        glof_mention_list = clean_mention_list
+
+    # sort the two nonoverlap mention lists
+    mention_list = mention_list + glof_mention_list
+    mention_list = sorted(mention_list, key=lambda m: m["offset"])
+    return mention_list
+
+
+@app.route("/run_pmid_glof", methods=["POST"])
+def run_pmid_glof():
+    arg = json.loads(request.data)
+    query = arg.get("query", "")
+
+    meta = kb_meta.get_meta_by_pmid(query)
+    paper = paper_glof.query_data(query)
+
+    # pmid
+    pmid = paper["pmid"]
+    pmid_html = '<div style="font-size: 20px; line-height: 200%;">' \
+                f'PMID: <a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{pmid}</a>' \
+                '</div>'
+
+    # meta
+    meta_html = [
+        f"Title: {meta['title']}",
+        f"Author: {meta['author']}",
+        f"Year: {meta['year']}",
+        f"Journal: {meta['journal']}",
+        f"PubMed Citation: {meta['citation']}",
+    ]
+    meta_html = "<br />".join(
+        html.escape(term)
+        for term in meta_html
+    )
+    meta_html = f'<div style="font-size: 20px; line-height: 200%;">{meta_html}</div>'
+
+    # ner
+    sentence_html_list = []
+    span_class_to_style = {
+        "gene": "font-weight: bold; color: #21d59b;",
+        "mutation": "font-weight: bold; color: #0058ff;",
+        "disease": "font-weight: bold; color: #ff8389;",
+        "drug": "font-weight: bold;",
+        "glof": "background-color:#5f96ff4d;",
+    }
+
+    for sentence_datum in paper["sentence_list"]:
+        sentence = sentence_datum["sentence"]
+        mention_list = sentence_datum["mention"]
+        glof_mention_list = sentence_datum["glof_mention_list"]
+        mention_list = get_sorted_nonoverlap_mention_list(mention_list, glof_mention_list)
+
+        sentence_html = ""
+        last_j = 0
+
+        for mention in mention_list:
+            name = mention["name"]
+            _type = mention["type"]
+            i = mention["offset"]
+            j = i + len(name)
+
+            span_style = span_class_to_style[ner_gvdc_mapping.get(_type, "glof")]
+            span_html = f"<span style='{span_style}'>{html.escape(name)}</span>"
+            sentence_html += html.escape(sentence[last_j:i]) + span_html
+            last_j = j
+
+        sentence_html += html.escape(sentence[last_j:])
+        sentence_html_list.append(sentence_html)
+
+    ner_html = " ".join(sentence_html_list)
+    ner_html = f'<div style="font-size: 18px; line-height: 200%;">{ner_html}</div>'
+
+    # nen
+    nen_html = []
+
+    for si, sentence_datum in enumerate(paper["sentence_list"]):
+        mention_list = sentence_datum["mention"]
+        glof_mention_list = sentence_datum["glof_mention_list"]
+        if not mention_list and not glof_mention_list:
+            continue
+
+        sentence_html = f'<div style="font-size: 18px; line-height: 200%;">{sentence_html_list[si]}</div>'
+        sentence_html += \
+            "<table><tr>" \
+            + "<th>Name</th>" \
+            + "<th>Type</th>" \
+            + "<th>ID</th>" \
+            + "<th>Offset</th>" \
+            + "</tr>"
+
+        for mention in mention_list + glof_mention_list:
+            name = mention["name"]
+            _type = mention["type"]
+            id_list = mention["id"]
+            offset = mention["offset"]
+
+            name = html.escape(name)
+            _type = html.escape(_type)
+            _id = html.escape(", ".join(id_list))
+
+            sentence_html += \
+                f"<tr><td>{name}</td>" \
+                + f"<td>{_type}</td>" \
+                + f"<td>{_id}</td>" \
+                + f"<td>{offset}</td></tr>"
+
+        sentence_html += "</table>"
+        nen_html.append(sentence_html)
+
+    nen_html = "<br /><br />".join(nen_html)
+
+    # combined result
+    result = pmid_html \
+             + meta_html \
+             + "<br /><br /><br />" \
+             + ner_html \
+             + "<br /><br /><br />" \
+             + nen_html \
+             + "<br /><br /><br /><br /><br />"
+
+    response = {
+        "result": result,
+    }
+    return json.dumps(response)
+
+
+@app.route("/query_pmid_glof")
+def query_pmid_glof():
+    arg = request.args
+    query = arg.get("query", "")
+
+    paper = paper_glof.query_data(query)
+    meta = kb_meta.get_meta_by_pmid(query)
+
+    response = {
+        "url_argument": arg,
+        "meta": meta,
+        "paper": paper,
+    }
+    return json.dumps(response)
+
+
+@app.route("/run_ent_glof", methods=["POST"])
+def run_ent_glof():
+    arg = json.loads(request.data)
+    _type = arg.get("type", "")
+    _id = arg.get("id", "")
+
+    glof_pmid_sid = entity_glof.query_data(_type, _id)
+
+    glof_to_html = {}
+
+    for glof in ["gof", "lof"]:
+        # title
+        title_html = f'<div style="font-size: 20px; line-height: 200%;">{html.escape(glof.upper())}</div>'
+
+        # pmid to sentence_index table
+        table_html = "<table><tr><th>PMID</th><th>sentence index</th></tr>"
+        pmid_sid = sorted(glof_pmid_sid.get(glof, {}).items(), key=lambda kv: -len(kv[1]))
+
+        for pmid, sid_list in pmid_sid:
+            table_html += f'<tr><td><a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{pmid}</a></td>'
+            sid_list = ", ".join([str(sid) for sid in sid_list])
+            sid_list = html.escape(sid_list)
+            table_html += f'<td>{sid_list}</td></tr>'
+
+        table_html += "</table>"
+
+        glof_to_html[glof] = title_html + "<br />" + table_html
+
+    result = glof_to_html["gof"] \
+             + "<br /><br /><br />" \
+             + glof_to_html["lof"] \
+             + "<br /><br /><br /><br /><br />"
+
+    response = {
+        "result": result,
+    }
+    return json.dumps(response)
+
+
+@app.route("/query_ent_glof")
+def query_ent_glof():
+    arg = request.args
+    _type = arg.get("type", "")
+    _id = arg.get("id", "")
+
+    glof_pmid_sid = entity_glof.query_data(_type, _id)
+
+    response = {
+        "url_argument": arg,
+        "GOF_pmid_to_sentence": glof_pmid_sid["gof"],
+        "LOF_pmid_to_sentence": glof_pmid_sid["lof"],
+    }
+    return json.dumps(response)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", default="12345")
 
-    parser.add_argument("--variant_dir", default="data/variant")
-    parser.add_argument("--gene_dir", default="data/gene")
-    parser.add_argument("--meta_dir", default="data/meta")
-    parser.add_argument("--paper_dir", default="data/paper")
+    parser.add_argument("--meta_dir")
+    parser.add_argument("--paper_dir")
+    parser.add_argument("--gene_dir")
+    parser.add_argument("--variant_dir")
+    parser.add_argument("--glof_dir")
 
-    parser.add_argument("--kb_type", default="relation", choices=["relation", "cooccur"])
-    parser.add_argument("--kb_dir", default="pubmedKB-PTC/1_319_disk")
-    parser.add_argument("--show_aid", default="false")
+    parser.add_argument("--kb_type", choices=["relation", "cooccur"])
+    parser.add_argument("--kb_dir")
+    parser.add_argument("--show_aid", default="false", choices=["true", "false"])
 
     arg = parser.parse_args()
     for key, value in vars(arg).items():
         if value is not None:
             logger.info(f"[{key}] {value}")
 
-    global v2g
-    v2g = V2G(arg.variant_dir, arg.gene_dir)
+    if arg.meta_dir:
+        global kb_meta
+        kb_meta = Meta(arg.meta_dir)
 
-    global kb
-    kb = KB(arg.kb_dir)
-    kb.load_nen()
-    kb.load_data()
-    kb.load_index()
+    if arg.paper_dir:
+        global paper_nen
+        paper_nen = PaperKB(arg.paper_dir)
 
-    global kb_type
-    kb_type = arg.kb_type
+    if arg.gene_dir and arg.variant_dir:
+        global v2g
+        v2g = V2G(arg.variant_dir, arg.gene_dir)
 
-    global kb_meta
-    kb_meta = Meta(arg.meta_dir)
+    if arg.glof_dir:
+        global paper_glof, entity_glof
+        paper_glof = PaperKB(arg.glof_dir)
+        entity_glof = GeVarToGLOF(arg.glof_dir)
 
-    global paper_nen
-    paper_nen = PaperNEN(arg.paper_dir)
+    if arg.kb_dir and arg.kb_type:
+        global kb, kb_type
+        kb = KB(arg.kb_dir)
+        kb.load_nen()
+        kb.load_data()
+        kb.load_index()
+        kb_type = arg.kb_type
 
     global show_aid
     show_aid = arg.show_aid == "true"

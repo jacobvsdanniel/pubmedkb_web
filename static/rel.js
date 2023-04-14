@@ -93,13 +93,13 @@ function get_json() {
     paper_end = document.getElementById("ta_paper_end").value
     paper_sort = document.getElementById("sl_paper_sort").value
 
-    e1_spec = encodeURI(e1_spec)
-    e2_spec = encodeURI(e2_spec)
-    pmid = encodeURI(pmid)
+    e1_spec = encodeURIComponent(e1_spec)
+    e2_spec = encodeURIComponent(e2_spec)
+    pmid = encodeURIComponent(pmid)
 
-    paper_start = encodeURI(paper_start)
-    paper_end = encodeURI(paper_end)
-    paper_sort = encodeURI(paper_sort)
+    paper_start = encodeURIComponent(paper_start)
+    paper_end = encodeURIComponent(paper_end)
+    paper_sort = encodeURIComponent(paper_sort)
 
     url = `./query_rel`
     url = `${url}?e1_spec=${e1_spec}`
@@ -119,9 +119,9 @@ function get_statistics_json() {
     e2_spec = query_spec[1]
     pmid = query_spec[2]
 
-    e1_spec = encodeURI(e1_spec)
-    e2_spec = encodeURI(e2_spec)
-    pmid = encodeURI(pmid)
+    e1_spec = encodeURIComponent(e1_spec)
+    e2_spec = encodeURIComponent(e2_spec)
+    pmid = encodeURIComponent(pmid)
 
     url = `./query_rel_statistics`
     url = `${url}?e1_spec=${e1_spec}`

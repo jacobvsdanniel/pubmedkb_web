@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Entity ID to Name</title>
+    <style>
+        table {
+            font-family: Helvetica, sans-serif;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        tr {
+            background-color: #f5f5f5;
+        }
+        tr:hover {
+            background-color: #fcfcfc;
+        }
+        td, th {
+            border: 1px solid #dddddd;
+            text-align: left;
+            padding: 8px;
+        }
+        th {
+            padding-top: 12px;
+            padding-bottom: 12px;
+            text-align: left;
+            background-color: #04AA6D;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+
+<div style="font-size: 16px; font-family: Helvetica, sans-serif; line-height: 1.5;">
+    pubmedKB API:&nbsp;&nbsp;<a href="home">home</a>&nbsp;&nbsp;<a href="id_to_name">ID-to-Name</a>
+</div>
+<br />
+<h1 style="font-family: Helvetica, sans-serif;">Entity ID to Name</h1>
+<br />
+
+<label style="font-size: 22px; font-family: Arial, Helvetica, sans-serif;">Type:</label>
+&nbsp;&nbsp;
+<select id="sl_type" style="font-size: 18px; height: 25px; font-family: Arial, Helvetica, sans-serif;">
+    <option value="Disease">Disease</option>
+    <option value="Chemical">Chemical</option>
+    <option value="Gene" selected="selected">Gene</option>
+    <option value="VARIANT">VARIANT (combined)</option>
+    <option value="ProteinMutation">ProteinMutation</option>
+    <option value="DNAMutation">DNAMutation</option>
+    <option value="SNP">SNP</option>
+    <option value="CopyNumberVariant">CopyNumberVariant</option>
+    <option value="Species">Species</option>
+    <option value="CellLine">CellLine</option>
+    <option value="Chromosome">Chromosome</option>
+    <option value="RefSeq">RefSeq</option>
+    <option value="GenomicRegion">GenomicRegion</option>
+    <option value="Genus">Genus</option>
+    <option value="DNAAcidChange">DNAAcidChange</option>
+    <option value="DomainMotif">DomainMotif</option>
+</select>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label style="font-size: 22px; font-family: Arial, Helvetica, sans-serif;">ID:</label>
+&nbsp;&nbsp;
+<textarea id="ta_id" style="font-size: 22px; width: 500px; height: 26px;">673</textarea>
+<br /><br />
+<button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="run_query()">show table</button>
+&nbsp;
+<button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="get_json()">get json</button>
+<br />
+<div id="div_status">Ready</div>
+<br /><br />
+
+<div style="font-size: 30px; font-family: Arial, Helvetica, sans-serif;">Result<br /><br /></div>
+<div id="div_result" style="width: 1300px; font-size: 14px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif;">None</div>
+
+<script type="text/javascript" src="static/id_to_name.js"></script>
+
+</body>
+
+</html>

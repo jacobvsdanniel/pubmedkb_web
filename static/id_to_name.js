@@ -2,10 +2,11 @@ function run_query(){
     document.getElementById("div_status").innerHTML = "Loading...";
 
     request_data = {
-        "query": document.getElementById("ta_query").value,
+        "type": document.getElementById("sl_type").value,
+        "id": document.getElementById("ta_id").value,
     };
 
-    fetch("./run_v2g", {method: "post", body: JSON.stringify(request_data)})
+    fetch("./run_id_to_name", {method: "post", body: JSON.stringify(request_data)})
     .then(function(response){
         return response.json();
     })
@@ -16,8 +17,12 @@ function run_query(){
 }
 
 function get_json(){
-    query = document.getElementById("ta_query").value;
-    query = encodeURI(query)
-    url = `./query_v2g?query=${query}`
+    type = document.getElementById("sl_type").value;
+    id = document.getElementById("ta_id").value;
+
+    type = encodeURIComponent(type)
+    id = encodeURIComponent(id)
+
+    url = `./query_id_to_name?type=${type}&id=${id}`
     window.open(url, "_blank");
 }

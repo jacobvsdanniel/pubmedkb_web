@@ -5,7 +5,7 @@ function run_query(){
         "query": document.getElementById("ta_query").value,
     };
 
-    fetch("./run_paper", {method: "post", body: JSON.stringify(request_data)})
+    fetch("./run_rs_hgvs_gene", {method: "post", body: JSON.stringify(request_data)})
     .then(function(response){
         return response.json();
     })
@@ -18,6 +18,6 @@ function run_query(){
 function get_json(){
     query = document.getElementById("ta_query").value;
     query = encodeURIComponent(query)
-    url = `./query_paper?query=${query}`
+    url = `./query_rs_hgvs_gene?query=${query}`
     window.open(url, "_blank");
 }

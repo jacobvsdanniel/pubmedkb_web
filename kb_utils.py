@@ -24,7 +24,6 @@ csv.register_dialect(
     "tsv", delimiter="\t", quoting=csv.QUOTE_NONE, quotechar=None, doublequote=False,
     escapechar=None, lineterminator="\n", skipinitialspace=False,
 )
-
 ner_gvdc_mapping = {
     "Gene": "gene",
     "Disease": "disease",
@@ -615,7 +614,7 @@ class KB:
         return pmid_to_ann
 
 
-class PaperNEN:
+class PaperKB:
     def __init__(self, data_dir):
         self.data_dir = data_dir
         self.pmid_to_offset = {}
@@ -657,6 +656,48 @@ class PaperNEN:
         paper_datum = self.data_file.readline()[:-1]
         paper_datum = json.loads(paper_datum)
         return paper_datum
+
+
+class GeVarToGLOF:
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self.type_key_offset = {}
+        self.type_to_value_file = {}
+        self.type_list = ["Gene", "VARIANT"]
+
+        if data_dir:
+            self.load_data()
+        return
+
+    def load_data(self):
+        for _type in self.type_list:
+            value_file = os.path.join(self.data_dir, f"{_type}_value.jsonl")
+            self.type_to_value_file[_type] = open(value_file, "r", encoding="utf8")
+
+            key_file = os.path.join(self.data_dir, f"{_type}_key.jsonl")
+            logger.info(f"Reading {key_file}")
+            self.type_key_offset[_type] = {}
+
+            with open(key_file, "r", encoding="utf8") as f:
+                for line in f:
+                    key, value_offset = json.loads(line[:-1])
+                    self.type_key_offset[_type][key] = value_offset
+
+            keys = len(self.type_key_offset[_type])
+            logger.info(f"Read {keys:,} {_type} keys")
+        return
+
+    def query_data(self, _type, key):
+        try:
+            offset = self.type_key_offset[_type][key]
+        except KeyError:
+            return {"gof": [], "lof": []}
+
+        value_file = self.type_to_value_file[_type]
+        value_file.seek(offset)
+        value = value_file.readline()[:-1]
+        value = json.loads(value)
+        return value
 
 
 def get_normalized_journal_name(name):

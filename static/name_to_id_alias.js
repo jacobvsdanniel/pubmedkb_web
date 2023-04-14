@@ -10,7 +10,7 @@ function run_query(){
         "max_aliases": document.getElementById("ta_max_aliases").value,
     };
 
-    fetch("./run_nen", {method: "post", body: JSON.stringify(request_data)})
+    fetch("./run_name_to_id_alias", {method: "post", body: JSON.stringify(request_data)})
     .then(function(response){
         return response.json();
     })
@@ -28,14 +28,14 @@ function get_json(){
     max_names = document.getElementById("ta_max_names").value;
     max_aliases = document.getElementById("ta_max_aliases").value;
 
-    query = encodeURI(query)
-    case_sensitive = encodeURI(case_sensitive)
-    max_length_diff = encodeURI(max_length_diff)
-    min_similarity = encodeURI(min_similarity)
-    max_names = encodeURI(max_names)
-    max_aliases = encodeURI(max_aliases)
+    query = encodeURIComponent(query)
+    case_sensitive = encodeURIComponent(case_sensitive)
+    max_length_diff = encodeURIComponent(max_length_diff)
+    min_similarity = encodeURIComponent(min_similarity)
+    max_names = encodeURIComponent(max_names)
+    max_aliases = encodeURIComponent(max_aliases)
 
-    url = `./query_nen?query=${query}`
+    url = `./query_name_to_id_alias?query=${query}`
     url = `${url}&case_sensitive=${case_sensitive}`
     url = `${url}&max_length_diff=${max_length_diff}`
     url = `${url}&min_similarity=${min_similarity}`

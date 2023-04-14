@@ -17,7 +17,7 @@ function run_query(){
 
 function get_json(){
     query = document.getElementById("ta_query").value;
-    query = encodeURI(query)
+    query = encodeURIComponent(query)
     url = `./query_var?query=${query}`
     window.open(url, "_blank");
 }

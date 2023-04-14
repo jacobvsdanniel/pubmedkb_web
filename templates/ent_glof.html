@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Variant to Gene Mapping</title>
+    <title>Entity GOF/LOF Query</title>
     <style>
         table {
             font-family: Helvetica, sans-serif;
@@ -33,16 +33,21 @@
 
 <body>
 
-<div style="font-size: 16px; font-family: Helvetica, sans-serif;">
-    pubmedKB API:&nbsp;&nbsp;<a href="nen">NEN</a>&nbsp;&nbsp;<a href="var">VAR</a>&nbsp;&nbsp;<a href="v2g">V2G</a>&nbsp;&nbsp;<a href="rel">REL</a>&nbsp;&nbsp;<a href="paper">PAPER</a>
+<div style="font-size: 16px; font-family: Helvetica, sans-serif; line-height: 1.5;">
+    pubmedKB API:&nbsp;&nbsp;<a href="home">home</a>&nbsp;&nbsp;<a href="ent_glof">ENT-to-GLOF</a>
 </div>
 <br />
-<h1 style="font-family: Helvetica, sans-serif;">Variant to Gene Mapping</h1>
+<h1 style="font-family: Helvetica, sans-serif;">Entity GOF/LOF Query</h1>
 <br />
 
-<label style="font-size: 22px;">Query:</label>
+<select id="sl_type" style="font-size: 22px; height: 32px;">
+    <option value="Gene" selected="selected">Gene</option>
+    <option value="VARIANT">VARIANT</option>
+</select>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<label style="font-size: 22px;">ID:</label>
 &nbsp;&nbsp;
-<textarea id="ta_query" style="font-size: 22px; width: 500px; height: 26px;">HGVS:p.V600E</textarea>
+<textarea id="ta_id" style="font-size: 22px; width: 300px; height: 26px;">7157</textarea>
 <br /><br />
 <button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="run_query()">show table</button>
 &nbsp;
@@ -54,7 +59,7 @@
 <div style="font-size: 30px; font-family: Arial, Helvetica, sans-serif;">Result<br /><br /></div>
 <div id="div_result" style="width: 1300px; font-size: 14px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif;">None</div>
 
-<script type="text/javascript" src="static/v2g.js"></script>
+<script type="text/javascript" src="static/ent_glof.js"></script>
 
 </body>
 
