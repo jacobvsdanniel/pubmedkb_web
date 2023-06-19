@@ -52,21 +52,33 @@ class clinical_report:
             return num + "th"
     
     def basic_info(self, sample):
-        self.table['gene_name'] = sample['VEP_VEP-refseq-Gene-Name']
+        # gene name
+        if 'VEP_VEP-refseq-Gene-Name' in sample.keys():
+            self.table['gene_name'] = sample['VEP_VEP-refseq-Gene-Name']
+        else:
+            self.table['gene_name'] = '.'
+        
+        # HGVSc, GT
         if 'VEP_VEP-refseq-HGVSc' in sample.keys():
             self.table['gene_ID'], self.table['HGVSc'] = sample['VEP_VEP-refseq-HGVSc'].split(':')
             self.table['CDS_position'] = self.find_CDS_pos(self.table['HGVSc'].split('.')[-1]).strip()
         else:
             self.table['gene_ID'], self.table['HGVSc'] = ['.', '.']
             self.table['CDS_position'] = '.'
-
-        if sample['Otherinfo_FORMAT-GT'].split("/")[0] == sample['Otherinfo_FORMAT-GT'].split("/")[1]:
-             self.table['GT'] = 'homozygous'
+        if 'Otherinfo_FORMAT-GT' in sample.keys():
+            if sample['Otherinfo_FORMAT-GT'].split("/")[0] == sample['Otherinfo_FORMAT-GT'].split("/")[1]:
+                self.table['GT'] = 'homozygous'
+            else:
+                self.table['GT']  = 'heterozygous'
         else:
-             self.table['GT']  = 'heterozygous'
+            self.table['GT']  = ''
         
-        tmp_consequence = [' '.join(cons.split('_')[:-1]) if cons.split('_')[-1] == 'variant' else ' '.join(cons.split('_')) for cons in sample['VEP_VEP-refseq-Consequence'][0].split(',')]
-        self.table['consequence'] = ' and '.join(tmp_consequence)
+        # Consequence
+        if 'VEP_VEP-refseq-Consequence' in sample.keys():
+            tmp_consequence = [' '.join(cons.split('_')[:-1]) if cons.split('_')[-1] == 'variant' else ' '.join(cons.split('_')) for cons in sample['VEP_VEP-refseq-Consequence'][0].split(',')]
+            self.table['consequence'] = ', '.join(tmp_consequence)
+        else:
+            self.table['consequence'] = ''
 
         if 'VEP_VEP-refseq-HGVSp'in sample.keys():
             self.table['exon_intron'] = 'exon'
@@ -74,11 +86,16 @@ class clinical_report:
         else:
             self.table['exon_intron'] = 'intron'
             self.table['HGVSp'] = '.'
-
-        [self.table['HGVSp_text'], self.table['v1_POS1'], self.table['v1_AA1'], self.table['v1_POS2'], 
-        self.table['v1_AA2'], self.table['v2_POS1'], self.table['v2_AA1'], self.table['v2_POS2'], self.table['v2_AA2']] = HGVSp_parser(self.table['HGVSp'])
     
-        self.table['exon_intron_position'] = ' '.join([self.table['exon_intron'], sample['VEP_VEP-refseq-Exon-or-Intron-Rank'].split('/')[0]])
+        # HGVSp parsing
+        [self.table['v1_POS1'], self.table['v1_AA1'], self.table['v1_POS2'], self.table['v1_AA2'], 
+        self.table['v2_POS1'], self.table['v2_AA1'], self.table['v2_POS2'], self.table['v2_AA2']] = HGVSp_parser(self.table['HGVSp']).aa_pos_dict.values()
+        
+        # exon/intron position
+        if 'VEP_VEP-refseq-Exon-or-Intron-Rank' in sample.keys():
+            self.table['exon_intron_position'] = ' '.join([self.table['exon_intron'], sample['VEP_VEP-refseq-Exon-or-Intron-Rank'].split('/')[0]])
+        else:
+            self.table['exon_intron_position'] = '.'
     
 
     def Pathogenicity_prediction(self, sample):
@@ -208,18 +225,21 @@ class clinical_report:
     
     def template_1(self, table):
         self.text_1 = {}
-        if table['HGVSc'] == ".":
-            self.text_1['consequence'] = f"A {table['GT']} {table['consequence']} variant is detected in the {table['gene_name']} gene, "
-            self.text_1['HGVSc'] =  ""
-        else:
-            if len(self.table['CDS_position'].split('_')) > 1:
-                tmp_position = 'from the ' + ' to the '.join([self.ordinal_suffix(pos) for pos in self.table['CDS_position'].split('_')])
+        if table['gene_name'] != ".":
+            if table['HGVSc'] == ".":
+                self.text_1['gene_name'] = f"A {table['GT']} {table['consequence']} variant is detected in the {table['gene_name']} gene, "
+                self.text_1['HGVSc'] =  ""
             else:
-                tmp_position = 'at the ' + self.ordinal_suffix(self.table['CDS_position'])
-            self.text_1['consequence'] = f"A {table['GT']} {table['consequence']} variant ({table['HGVSc']}) is detected {tmp_position} nucleotide \
+                if len(self.table['CDS_position'].split('_')) > 1:
+                    tmp_position = 'from the ' + ' to the '.join([self.ordinal_suffix(pos) for pos in self.table['CDS_position'].split('_')])
+                else:
+                    tmp_position = 'at the ' + self.ordinal_suffix(self.table['CDS_position'])
+                self.text_1['gene_name'] = f"A {table['GT']} {table['consequence']} variant ({table['HGVSc']}) is detected {tmp_position} nucleotide \
 in {table['exon_intron_position']} of the {table['gene_name']} gene ({table['gene_ID']}).\n"
-            self.text_1['HGVSc'] =  ""
-        self.text_1['HGVSp'] = table['HGVSp_text']
+                self.text_1['HGVSc'] =  ""
+        else:
+            self.text_1['gene_name'] = ''
+        self.text_1['HGVSp'] = HGVSp_parser(self.table['HGVSp']).text
         self.text_1['ClinVar_record'] = f"This variant is recorded as '{table['ClinVar_record']}' in the ClinVar database.\n"
         self.text_1['hotspot'] = f"This variant is located in a hotspot region associated with high pathogenicity. (Pathogenic variants from {table['hotspot']})\n"
         self.text_1['gnomAD_freq'] = f"The allele frequency of this variant in the East Asian population of the Genome Aggregation Database (gnomAD) is {table['gnomAD_freq']}. "
@@ -235,18 +255,18 @@ donor gain (DG) = {table['spliceAI_DG']}, and donor loss (DL) = {table['spliceAI
     
     def template_2(self, table):
         self.text_2 = {}
-        if table['HGVSc'] == ".":
-            self.text_2['consequence'] = f"A {table['GT']} {table['consequence']} variant is detected in the {table['gene_name']} gene, "
-            self.text_2['HGVSc'] =  ""
-        else:
-            if len(self.table['CDS_position'].split('_')) > 1:
-                tmp_position = 'from the ' + ' to the '.join([self.ordinal_suffix(pos) for pos in self.table['CDS_position'].split('_')])
+        if table['gene_name'] != ".":
+            if table['HGVSc'] == ".":
+                self.text_2['gene_name'] = f"A {table['GT']} {table['consequence']} variant is detected in the {table['gene_name']} gene, "
             else:
-                tmp_position = 'at the ' + self.ordinal_suffix(self.table['CDS_position'])
-            self.text_2['consequence'] = f"We detected a {table['GT']} {table['consequence']} variant ({table['HGVSc']}) {tmp_position} nucleotide \
+                if len(self.table['CDS_position'].split('_')) > 1:
+                    tmp_position = 'from the ' + ' to the '.join([self.ordinal_suffix(pos) for pos in self.table['CDS_position'].split('_')])
+                else:
+                    tmp_position = 'at the ' + self.ordinal_suffix(self.table['CDS_position'])
+                self.text_2['gene_name'] = f"We detected a {table['GT']} {table['consequence']} variant ({table['HGVSc']}) {tmp_position} nucleotide \
 in {table['exon_intron_position']} of the {table['gene_name']} gene ({table['gene_ID']}).\n"
-            self.text_2['HGVSc'] =  ""
-        self.text_2['HGVSp'] = table['HGVSp_text']
+                self.text_2['HGVSc'] =  ""
+        self.text_2['HGVSp'] = HGVSp_parser(self.table['HGVSp']).text
         self.text_2['ClinVar_record'] = f"The ClinVar database depicted this variant as '{table['ClinVar_record']}'.\n"
         self.text_2['hotspot'] = f"Based on the record from {table['hotspot']}, this variant is located in a hotspot region associated with high pathogenicity.\n"
         self.text_2['gnomAD_freq'] = f"The East Asian population of the Genome Aggregation Database (gnomAD) showed that the allele frequency of this variant is {table['gnomAD_freq']}. "
@@ -260,6 +280,7 @@ in {table['exon_intron_position']} of the {table['gene_name']} gene ({table['gen
     
     def template_na(self):
         self.text_na = {}
+        self.text_na['gene_name'] = "The variant might be detected in an upstream or downstream region of the sequence, and the software could not identify which gene it is located in. "
         self.text_na['HGVSc'] = "but there is no sequence change compare to a reference sequence. "
         self.text_na['HGVSp'] = "There is no substitution of amino acid.\n"
         self.text_na['hotspot'] = "This variant is not recorded in any database to be located in a hotspot region.\n"
@@ -278,6 +299,8 @@ in {table['exon_intron_position']} of the {table['gene_name']} gene ({table['gen
         for key in self.text_1.keys():
             if self.table[key] =='.':
                 report += self.text_na[key]
+                if key == 'gene_name':
+                    return report
             else:
                 n = random.random()
                 if n > 0.5:
@@ -305,3 +328,4 @@ in {table['exon_intron_position']} of the {table['gene_name']} gene ({table['gen
             linear_raw_table += f"<cell> {self.sample[key]} <col_header> {key} </col_header> </cell> "
         linear_raw_table += "</table>"
         return linear_raw_table
+    
