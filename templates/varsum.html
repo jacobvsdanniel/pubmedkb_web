@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Variant Summary Report</title>
+    <style>
+        table {
+            font-family: Helvetica, sans-serif;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        tr {
+            background-color: #f5f5f5;
+        }
+        tr:hover {
+            background-color: #fcfcfc;
+        }
+        td, th {
+            border: 1px solid #dddddd;
+            text-align: left;
+            padding: 8px;
+        }
+        th {
+            padding-top: 12px;
+            padding-bottom: 12px;
+            text-align: left;
+            background-color: #04AA6D;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+
+<div style="font-size: 16px; font-family: Helvetica, sans-serif; line-height: 1.5;">
+    pubmedKB API:&nbsp;&nbsp;<a href="home">home</a>&nbsp;&nbsp;<a href="varsum">VarSum</a>
+</div>
+<br />
+<h1 style="font-family: Helvetica, sans-serif;">Variant Summary Report</h1>
+<br />
+
+<label style="font-size: 22px;">Variant Attributes:</label><br />
+&nbsp;&nbsp;
+<textarea id="ta_query" style="font-size: 16px; width: 800px; height: 400px;">{
+    "Otherinfo_FORMAT-GT": "1/1",
+    "VEP_VEP-refseq-Consequence": ["missense_variant"],
+    "VEP_VEP-refseq-HGVSc": "NM_000441.2:c.2168A>G",
+    "VEP_VEP-refseq-Exon-or-Intron-Rank": "19/21",
+    "VEP_VEP-refseq-Gene-Name": "SLC26A4",
+    "VEP_VEP-refseq-HGVSp": "NP_000432.1:p.His723Arg",
+    "ClinVar_CLNSIG": ["Pathogenic"],
+    "pathogenicHotspot-ailabs_pathogenicHotspot": ["DeafnessVD,ClinVar"],
+    "gnomAD-Genomes_AF-popmax": 0.00172877,
+    "TaiwanBiobank-official_Illumina1000-AF": 0.0025,
+    "Pathogenicity Scores_Ensembl-transcriptid": "ENST00000265715;ENST00000644269",
+    "Pathogenicity Scores_SIFT-score": "0.001;.",
+    "Pathogenicity Scores_Polyphen2-HVAR-score": "1.0;1.0",
+    "SpliceAI-SNV_DS-AG": 0.0,
+    "SpliceAI-SNV_DS-AL": 0.0,
+    "SpliceAI-SNV_DS-DG": 0.0,
+    "SpliceAI-SNV_DS-DL": 0.0,
+    "DANN_DANN-score": 0.9980266390076248,
+    "Conservation Scores_phyloP100way-vertebrate-rankscore": 0.76614
+}</textarea>
+<br /><br />
+<button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="run_query()">show result</button>
+&nbsp;
+<button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="get_json()">get json</button>
+<br />
+<div id="div_status">Ready</div>
+<br /><br />
+
+<div style="font-size: 30px; font-family: Arial, Helvetica, sans-serif;">Result<br /><br /></div>
+<div id="div_result" style="width: 1000px; font-size: 14px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif;">None</div>
+
+<script type="text/javascript" src="static/varsum.js"></script>
+
+</body>
+
+</html>

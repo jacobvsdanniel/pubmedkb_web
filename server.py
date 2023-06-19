@@ -13,6 +13,7 @@ from flask import Flask, render_template, request
 from kb_utils import query_variant, V2G, KB, Meta, PaperKB, GeVarToGLOF
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from summary_utils import Summary
+from variant_report_json import clinical_report as ClinicalReport
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
@@ -87,6 +88,11 @@ def serve_ent_glof():
 @app.route("/id_to_name")
 def serve_id_to_name():
     return render_template("id_to_name.html")
+
+
+@app.route("/varsum")
+def serve_varsum():
+    return render_template("varsum.html")
 
 
 @app.route("/run_name_to_id_alias", methods=["POST"])
@@ -1353,6 +1359,41 @@ def query_ent_glof():
         "GOF_pmid_to_sentence": glof_pmid_sid["gof"],
         "LOF_pmid_to_sentence": glof_pmid_sid["lof"],
     }
+    return json.dumps(response)
+
+
+@app.route("/run_varsum", methods=["POST"])
+def run_varsum():
+    data = json.loads(request.data)
+    query = json.loads(data["query"])
+    logger.info(f"query={query}")
+
+    report = ClinicalReport(query)
+    report = report.generate_report()
+    report = html.escape(report)
+
+    result = f'<div style="font-size: 16px; line-height: 200%;">{report}</div><br />'
+
+    response = {"result": result}
+    return json.dumps(response)
+
+
+@app.route("/query_varsum")
+def query_varsum():
+    response = {}
+
+    # url argument
+    query = request.args.get("query")
+    response["url_argument"] = {
+        "query": query,
+    }
+    query = json.loads(query)
+    logger.info(f"query={query}")
+
+    # variant matches
+    report = ClinicalReport(query)
+    report = report.generate_report()
+    response["report"] = report
     return json.dumps(response)
 
 
