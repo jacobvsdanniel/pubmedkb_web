@@ -5,8 +5,9 @@
 **The core annotators, pretrained models, and training data can be downloaded at [pubmedKB core](https://github.com/jacobvsdanniel/pubmedkb_core)**
 
 Authors:
-- Peng-Hsuan Li @ ailabs.tw (jacobvsdanniel [at] gmail.com)
-- Eunice You-Chi Liu @ ailabs.tw (eunicecollege2019 [at] gmail.com)
+- Li Peng-Hsuan (李朋軒) @ ailabs.tw (jacobvsdanniel [at] gmail.com)
+- Sun Yih-Yun (孫懿筠) @ ailabs.tw (jessie.yy.sun [at] gmail.com)
+- Eunice You-Chi Liu (劉又綺) @ ailabs.tw (eunicecollege2019 [at] gmail.com)
 
 <!-- ![NEN](https://github.com/jacobvsdanniel/pubmedkb_web/blob/main/image_dir/web_nen.png) -->
 <!-- ![REL](https://github.com/jacobvsdanniel/pubmedkb_web/blob/main/image_dir/web_rel.png) -->
