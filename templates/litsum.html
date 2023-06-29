@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Literature Summary Report</title>
+    <style>
+        table {
+            font-family: Helvetica, sans-serif;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        tr {
+            background-color: #f5f5f5;
+        }
+        tr:hover {
+            background-color: #fcfcfc;
+        }
+        td, th {
+            border: 1px solid #dddddd;
+            text-align: left;
+            padding: 8px;
+        }
+        th {
+            padding-top: 12px;
+            padding-bottom: 12px;
+            text-align: left;
+            background-color: #04AA6D;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+
+<div style="font-size: 16px; font-family: Helvetica, sans-serif; line-height: 1.5;">
+    pubmedKB API:&nbsp;&nbsp;<a href="home">home</a>&nbsp;&nbsp;<a href="litsum">LitSum</a>
+</div>
+<br />
+<h1 style="font-family: Helvetica, sans-serif;">Literature Summary Report</h1>
+<br />
+
+<label style="font-size: 22px;">Argument:</label><br />
+&nbsp;&nbsp;
+<textarea id="ta_query" spellcheck="false" style="font-size: 16px; width: 800px; height: 400px;">{
+    "entity_1": "V600E",
+    "entity_2": "lung cancer",
+    "pmid_list": [
+        "36112789",
+        "24589553",
+        "22511580",
+        "34433708",
+        "33276639",
+        "33037234",
+        "31452510",
+        "36697098",
+        "34484797",
+        "24019382"
+    ]
+}</textarea><br />
+<div>
+    <label for="pass_key">OpenAI API Key:</label>
+    <input type="password" id="pass_key" style="font-size: 16px; width: 400px;">
+</div>
+<br /><br />
+<button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="run_query()">show result</button>
+&nbsp;
+<button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="get_json()">get json</button>
+<br />
+<div id="div_status">Ready</div>
+<br /><br />
+
+<div style="font-size: 30px; font-family: Arial, Helvetica, sans-serif;">Result<br /><br /></div>
+<div id="div_result" style="width: 1000px; font-size: 14px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif;">None</div>
+
+<script type="text/javascript" src="static/litsum.js"></script>
+
+</body>
+
+</html>

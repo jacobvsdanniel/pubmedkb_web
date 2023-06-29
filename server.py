@@ -14,6 +14,8 @@ from kb_utils import query_variant, V2G, KB, Meta, PaperKB, GeVarToGLOF
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from summary_utils import Summary
 from variant_report_json import clinical_report as ClinicalReport
+import gpt_utils
+from gpt_utils import PaperGPT, ReviewGPT
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
@@ -93,6 +95,11 @@ def serve_id_to_name():
 @app.route("/varsum")
 def serve_varsum():
     return render_template("varsum.html")
+
+
+@app.route("/litsum")
+def serve_litsum():
+    return render_template("litsum.html")
 
 
 @app.route("/run_name_to_id_alias", methods=["POST"])
@@ -1397,6 +1404,123 @@ def query_varsum():
     return json.dumps(response)
 
 
+@app.route("/run_litsum", methods=["POST"])
+def run_litsum():
+    # argument
+    data = json.loads(request.data)
+    gpt_utils.openai.api_key = data["openai_api_key"]
+    query = json.loads(data["query"])
+    logger.info(f"query={query}")
+
+    entity_1 = query["entity_1"]
+    entity_2 = query["entity_2"]
+    pmid_list = query["pmid_list"]
+
+    # paper summary
+    paper_html_list = []
+    papergpt_list = []
+
+    for pmid in pmid_list:
+        paper = paper_nen.query_data(pmid)
+        title = paper["title"]
+        abstract = paper["abstract"]
+
+        if title or abstract:
+            papergpt = PaperGPT(pmid, title, abstract, entity_1, entity_2)
+            papergpt.get_paper_summary()
+            papergpt_list.append(papergpt)
+
+            title_html = html.escape(title)
+            summary_html = html.escape(papergpt.paper_summary)
+            summary_html = summary_html.replace("\n", "<br />")
+        else:
+            title_html = "Paper not found"
+            summary_html = "No summary."
+
+        paper_html = \
+            '<div style="font-size: 16px; font-weight: bold; line-height: 200%;">' \
+            f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">[PMID-{pmid}]</a> ' \
+            f'{title_html}' \
+            '</div><br />' \
+            '<div style="font-size: 16px; line-height: 200%;">' \
+            f'{summary_html}' \
+            '</div>'
+        paper_html_list.append(paper_html)
+
+    all_paper_html = "<br /><hr /><br />".join(paper_html_list)
+
+    # review summary
+    reviewgpt = ReviewGPT(papergpt_list, entity_1, entity_2)
+    reviewgpt.get_summary()
+    review_html = html.escape(reviewgpt.summary)
+
+    result = \
+        f'<div style="font-size: 16px; font-weight: bold; line-height: 200%;">[REVIEW] {entity_1} and {entity_2}</div><br />' \
+        f'<div style="font-size: 16px; line-height: 200%;">{review_html}</div><br /><hr /><br />' \
+        f"{all_paper_html}"
+
+    response = {"result": result}
+    return json.dumps(response)
+
+
+@app.route("/query_litsum")
+def query_litsum():
+    response = {}
+
+    # url argument
+    openai_api_key = request.args.get("openai_api_key")
+    gpt_utils.openai.api_key = openai_api_key
+
+    query = request.args.get("query")
+    response["url_argument"] = {
+        "query": query,
+        "openai_api_key": "yolo",
+    }
+    query = json.loads(query)
+    logger.info(f"query={query}")
+
+    entity_1 = query["entity_1"]
+    entity_2 = query["entity_2"]
+    pmid_list = query["pmid_list"]
+
+    # paper summary
+    paper_summary_list = []
+    papergpt_list = []
+
+    for pmid in pmid_list:
+        paper = paper_nen.query_data(pmid)
+        title = paper["title"]
+        abstract = paper["abstract"]
+
+        if title or abstract:
+            papergpt = PaperGPT(pmid, title, abstract, entity_1, entity_2)
+            papergpt.get_paper_summary()
+            papergpt_list.append(papergpt)
+
+            paper_summary_list.append({
+                "pmid": pmid,
+                "title": title,
+                "abstract": abstract,
+                "summary": papergpt.paper_summary,
+            })
+        else:
+            paper_summary_list.append({
+                "pmid": pmid,
+                "title": title,
+                "abstract": abstract,
+                "summary": "No summary.",
+            })
+
+    response["paper_summary_list"] = paper_summary_list
+
+    # review summary
+    reviewgpt = ReviewGPT(papergpt_list, entity_1, entity_2)
+    reviewgpt.get_summary()
+    response["review_summary"] = reviewgpt.summary
+
+    return json.dumps(response)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
@@ -1417,30 +1541,30 @@ def main():
         if value is not None:
             logger.info(f"[{key}] {value}")
 
-    if arg.meta_dir:
-        global kb_meta
-        kb_meta = Meta(arg.meta_dir)
+    # if arg.meta_dir:
+    #     global kb_meta
+    #     kb_meta = Meta(arg.meta_dir)
 
     if arg.paper_dir:
         global paper_nen
         paper_nen = PaperKB(arg.paper_dir)
 
-    if arg.gene_dir and arg.variant_dir:
-        global v2g
-        v2g = V2G(arg.variant_dir, arg.gene_dir)
-
-    if arg.glof_dir:
-        global paper_glof, entity_glof
-        paper_glof = PaperKB(arg.glof_dir)
-        entity_glof = GeVarToGLOF(arg.glof_dir)
-
-    if arg.kb_dir and arg.kb_type:
-        global kb, kb_type
-        kb = KB(arg.kb_dir)
-        kb.load_nen()
-        kb.load_data()
-        kb.load_index()
-        kb_type = arg.kb_type
+    # if arg.gene_dir and arg.variant_dir:
+    #     global v2g
+    #     v2g = V2G(arg.variant_dir, arg.gene_dir)
+    #
+    # if arg.glof_dir:
+    #     global paper_glof, entity_glof
+    #     paper_glof = PaperKB(arg.glof_dir)
+    #     entity_glof = GeVarToGLOF(arg.glof_dir)
+    #
+    # if arg.kb_dir and arg.kb_type:
+    #     global kb, kb_type
+    #     kb = KB(arg.kb_dir)
+    #     kb.load_nen()
+    #     kb.load_data()
+    #     kb.load_index()
+    #     kb_type = arg.kb_type
 
     global show_aid
     show_aid = arg.show_aid == "true"
