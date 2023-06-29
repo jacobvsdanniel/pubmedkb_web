@@ -1541,30 +1541,30 @@ def main():
         if value is not None:
             logger.info(f"[{key}] {value}")
 
-    # if arg.meta_dir:
-    #     global kb_meta
-    #     kb_meta = Meta(arg.meta_dir)
+    if arg.meta_dir:
+        global kb_meta
+        kb_meta = Meta(arg.meta_dir)
 
     if arg.paper_dir:
         global paper_nen
         paper_nen = PaperKB(arg.paper_dir)
 
-    # if arg.gene_dir and arg.variant_dir:
-    #     global v2g
-    #     v2g = V2G(arg.variant_dir, arg.gene_dir)
-    #
-    # if arg.glof_dir:
-    #     global paper_glof, entity_glof
-    #     paper_glof = PaperKB(arg.glof_dir)
-    #     entity_glof = GeVarToGLOF(arg.glof_dir)
-    #
-    # if arg.kb_dir and arg.kb_type:
-    #     global kb, kb_type
-    #     kb = KB(arg.kb_dir)
-    #     kb.load_nen()
-    #     kb.load_data()
-    #     kb.load_index()
-    #     kb_type = arg.kb_type
+    if arg.gene_dir and arg.variant_dir:
+        global v2g
+        v2g = V2G(arg.variant_dir, arg.gene_dir)
+
+    if arg.glof_dir:
+        global paper_glof, entity_glof
+        paper_glof = PaperKB(arg.glof_dir)
+        entity_glof = GeVarToGLOF(arg.glof_dir)
+
+    if arg.kb_dir and arg.kb_type:
+        global kb, kb_type
+        kb = KB(arg.kb_dir)
+        kb.load_nen()
+        kb.load_data()
+        kb.load_index()
+        kb_type = arg.kb_type
 
     global show_aid
     show_aid = arg.show_aid == "true"
