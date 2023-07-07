@@ -720,7 +720,6 @@ class Meta:
     def __init__(self, meta_dir):
         self.meta_file = None
         self.pmid_to_meta_offset = {}
-        self.pmid_to_cites = {}
         self.journal_to_impact = {}
 
         if not meta_dir:
@@ -761,7 +760,7 @@ class Meta:
             }
         else:
             self.meta_file.seek(offset)
-            meta = self.meta_file.readline()[:-1]
+            meta = self.meta_file.readline()
             meta = json.loads(meta)
 
         meta["citation"] = self.pmid_to_citation.get(pmid, 0)
