@@ -10,7 +10,7 @@ from collections import defaultdict
 
 from flask import Flask, render_template, request
 
-from kb_utils import query_variant, V2G, KB, Meta, PaperKB, GeVarToGLOF
+from kb_utils import query_variant, V2G, KB, Meta, PaperKB, GeVarToGLOF, GVDScore
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from summary_utils import Summary
 from variant_report_json import clinical_report as ClinicalReport
@@ -38,6 +38,8 @@ kb_meta = Meta(None)
 paper_nen = PaperKB(None)
 paper_glof = PaperKB(None)
 entity_glof = GeVarToGLOF(None)
+gvd_ner_score = GVDScore(None)
+gvd_rel_score = GVDScore(None)
 kb_type = None
 show_aid = False
 
@@ -100,6 +102,11 @@ def serve_varsum():
 @app.route("/litsum")
 def serve_litsum():
     return render_template("litsum.html")
+
+
+@app.route("/gvd_stats")
+def serve_gvd_stats():
+    return render_template("gvd_stats.html")
 
 
 @app.route("/run_name_to_id_alias", methods=["POST"])
@@ -1521,6 +1528,99 @@ def query_litsum():
     return json.dumps(response)
 
 
+@app.route("/run_gvd_stats", methods=["POST"])
+def run_gvd_stats():
+    arg = json.loads(request.data)
+    _type = arg.get("type", "")
+    gene_id = arg.get("gene_id", "")
+    variant_id = arg.get("variant_id", "")
+    disease_id = arg.get("disease_id", "")
+
+    if _type == "gd":
+        key = (gene_id, disease_id)
+    elif _type == "vd":
+        variant_id = json.loads(variant_id)
+        hgvs = ""
+        rs = ""
+        gene = ""
+        for _id in variant_id:
+            if _id.startswith("HGVS:"):
+                hgvs = _id
+            elif _id.startswith("RS#:"):
+                rs = _id
+            elif _id.startswith("CorrespondingGene:"):
+                gene = _id
+        key = ((hgvs, rs, gene), disease_id)
+    else:
+        assert False
+
+    ner = gvd_ner_score.query_data(_type, key)
+    rel = gvd_rel_score.query_data(_type, key)
+
+    # ner
+    ner_html = "<table><tr><th>Co-occurrence</th><th>Count</th></tr>"
+    for ann, score in ner.items():
+        ann = html.escape(ann)
+        score = html.escape(score)
+        ner_html += f"<tr><td>{ann}</td><td>{score}</td></tr>"
+    ner_html += "</table>"
+
+    # rel
+    rel_html = "<table><tr><th>Annotator</th><th>Score</th></tr>"
+    for ann, score in rel.items():
+        ann = html.escape(ann)
+        score = html.escape(score)
+        rel_html += f"<tr><td>{ann}</td><td>{score}</td></tr>"
+    rel_html += "</table>"
+
+    result = ner_html \
+             + "<br /><br /><br />" \
+             + rel_html \
+             + "<br /><br /><br />"
+
+    response = {
+        "result": result,
+    }
+    return json.dumps(response)
+
+
+@app.route("/query_gvd_stats")
+def query_gvd_stats():
+    arg = request.args
+    _type = arg.get("type", "")
+    gene_id = arg.get("gene_id", "")
+    variant_id = arg.get("variant_id", "")
+    disease_id = arg.get("disease_id", "")
+
+    if _type == "gd":
+        key = (gene_id, disease_id)
+    elif _type == "vd":
+        variant_id = json.loads(variant_id)
+        hgvs = ""
+        rs = ""
+        gene = ""
+        for _id in variant_id:
+            if _id.startswith("HGVS:"):
+                hgvs = _id
+            elif _id.startswith("RS#:"):
+                rs = _id
+            elif _id.startswith("CorrespondingGene:"):
+                gene = _id
+        key = ((hgvs, rs, gene), disease_id)
+    else:
+        assert False
+
+    ner = gvd_ner_score.query_data(_type, key)
+    rel = gvd_rel_score.query_data(_type, key)
+
+    response = {
+        "url_argument": arg,
+        "ner": ner,
+        "rel": rel,
+    }
+    return json.dumps(response)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
@@ -1531,6 +1631,8 @@ def main():
     parser.add_argument("--gene_dir")
     parser.add_argument("--variant_dir")
     parser.add_argument("--glof_dir")
+    parser.add_argument("--gvd_ner_score_dir")
+    parser.add_argument("--gvd_rel_score_dir")
 
     parser.add_argument("--kb_type", choices=["relation", "cooccur"])
     parser.add_argument("--kb_dir")
@@ -1565,6 +1667,14 @@ def main():
         kb.load_data()
         kb.load_index()
         kb_type = arg.kb_type
+
+    if arg.gvd_ner_score_dir:
+        global gvd_ner_score
+        gvd_ner_score = GVDScore(arg.gvd_ner_score_dir)
+
+    if arg.gvd_rel_score_dir:
+        global gvd_rel_score
+        gvd_rel_score = GVDScore(arg.gvd_rel_score_dir)
 
     global show_aid
     show_aid = arg.show_aid == "true"

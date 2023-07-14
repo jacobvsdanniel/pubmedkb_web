@@ -96,6 +96,47 @@ def read_csv(file, dialect, write_log=True):
     return row_list
 
 
+class DiskDict:
+    def __init__(self, key_file, value_file, key_process=None):
+        self.key_file = key_file
+        self.value_file = value_file
+        self.key_process = key_process
+        self.key_to_offset = {}
+        self.value_fp = None
+
+        if key_file and value_file:
+            self.load_data()
+        return
+
+    def load_data(self):
+        self.value_fp = open(self.value_file, "r", encoding="utf8")
+
+        logger.info(f"Reading {self.key_file}")
+        self.key_to_offset = {}
+
+        with open(self.key_file, "r", encoding="utf8") as f:
+            for line in f:
+                key, value_offset = json.loads(line)
+                if self.key_process:
+                    key = self.key_process(key)
+                self.key_to_offset[key] = value_offset
+
+        keys = len(self.key_to_offset)
+        logger.info(f"Read {keys:,} keys")
+        return
+
+    def get(self, key, default_value=None):
+        try:
+            offset = self.key_to_offset[key]
+        except KeyError:
+            return default_value
+
+        self.value_fp.seek(offset)
+        value = self.value_fp.readline()
+        value = json.loads(value)
+        return value
+
+
 def intersection_of_key_to_set(dict_list):
     if len(dict_list) <= 1:
         return dict_list[0]
@@ -768,6 +809,40 @@ class Meta:
         journal = get_normalized_journal_name(meta["journal"])
         meta["journal_impact"] = self.journal_to_impact.get(journal, "")
         return meta
+
+
+class GVDScore:
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self.type_to_dict = {}
+        self.type_list = ["gd", "vd"]
+
+        if data_dir:
+            self.load_data()
+        return
+
+    def load_data(self):
+        for _type in self.type_list:
+            value_file = os.path.join(self.data_dir, f"{_type}_value.jsonl")
+            key_file = os.path.join(self.data_dir, f"{_type}_key.jsonl")
+
+            if _type == "gd":
+                def key_process(key):
+                    return tuple(key)
+            else:
+                def key_process(key):
+                    return tuple(key[0]), key[1]
+
+            self.type_to_dict[_type] = DiskDict(
+                key_file,
+                value_file,
+                key_process=key_process,
+            )
+        return
+
+    def query_data(self, _type, key):
+        value = self.type_to_dict[_type].get(key, {})
+        return value
 
 
 def test_nen(kb_dir):
