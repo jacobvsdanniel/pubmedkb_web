@@ -10,12 +10,15 @@ from collections import defaultdict
 
 from flask import Flask, render_template, request
 
-from kb_utils import query_variant, V2G, KB, Meta, PaperKB, GeVarToGLOF, GVDScore
+from kb_utils import query_variant, NEN, V2G, NCBIGene, KB, PaperKB, GeVarToGLOF, Meta, GVDScore
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from summary_utils import Summary
 from variant_report_json import clinical_report as ClinicalReport
-import gpt_utils
-from gpt_utils import PaperGPT, ReviewGPT
+try:
+    import gpt_utils
+    from gpt_utils import PaperGPT, ReviewGPT
+except ModuleNotFoundError:
+    pass
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
@@ -32,14 +35,15 @@ csv.register_dialect(
     "tsv", delimiter="\t", quoting=csv.QUOTE_NONE, quotechar=None, doublequote=False,
     escapechar=None, lineterminator="\n", skipinitialspace=False,
 )
+nen = NEN(None)
 v2g = V2G(None, None)
+ncbi_gene = NCBIGene(None)
 kb = KB(None)
 kb_meta = Meta(None)
 paper_nen = PaperKB(None)
 paper_glof = PaperKB(None)
 entity_glof = GeVarToGLOF(None)
-gvd_ner_score = GVDScore(None)
-gvd_rel_score = GVDScore(None)
+gvd_score = GVDScore(None)
 kb_type = None
 show_aid = False
 
@@ -128,7 +132,7 @@ def run_name_to_id_alias():
         f" max_aliases={max_aliases}"
     )
 
-    name_similarity_list = kb.nen.get_names_by_query(
+    name_similarity_list = nen.get_names_by_query(
         query,
         case_sensitive=case_sensitive,
         max_length_diff=max_length_diff,
@@ -147,7 +151,7 @@ def run_name_to_id_alias():
         result += f"<label style='font-size: 22px;'>{caption_html}</label><br /><br />"
 
         # id
-        type_id_frequency_list = kb.nen.get_ids_by_name(name)
+        type_id_frequency_list = nen.get_ids_by_name(name)
         ids = len(type_id_frequency_list)
         logger.info(f"ids: {ids}")
         table_html = \
@@ -160,7 +164,7 @@ def run_name_to_id_alias():
 
         # alias
         for _type, _id, id_frequency in type_id_frequency_list:
-            alias_frequency_list = kb.nen.get_aliases_by_id(_type, _id, max_aliases=max_aliases)
+            alias_frequency_list = nen.get_aliases_by_id(_type, _id, max_aliases=max_aliases)
             logger.info(f"({_type}, {_id}, {name}, {id_frequency}): alias_list={alias_frequency_list}")
 
             type_html = html.escape(_type)
@@ -222,7 +226,7 @@ def query_name_to_id_alias():
     )
 
     # name matches
-    name_similarity_list = kb.nen.get_names_by_query(
+    name_similarity_list = nen.get_names_by_query(
         query,
         case_sensitive=case_sensitive,
         max_length_diff=max_length_diff,
@@ -242,7 +246,7 @@ def query_name_to_id_alias():
         logger.info(f"name: {name}, similarity: {similarity}")
 
         # id
-        type_id_frequency_list = kb.nen.get_ids_by_name(name)
+        type_id_frequency_list = nen.get_ids_by_name(name)
         ids = len(type_id_frequency_list)
         logger.info(f"ids: {ids}")
 
@@ -254,7 +258,7 @@ def query_name_to_id_alias():
             }
 
             # alias
-            alias_frequency_list = kb.nen.get_aliases_by_id(_type, _id, max_aliases=max_aliases)
+            alias_frequency_list = nen.get_aliases_by_id(_type, _id, max_aliases=max_aliases)
             type_id_alias["alias_list"] = [
                 {
                     "alias": alias,
@@ -283,7 +287,7 @@ def run_id_to_name():
     # expand the umbrella type to real types and query KB
     name_frequency_list = []
     for _type in entity_type_to_real_type_mapping.get(_type, [_type]):
-        name_frequency_list += kb.nen.get_aliases_by_id(_type, _id, max_aliases=top_k)
+        name_frequency_list += nen.get_aliases_by_id(_type, _id, max_aliases=top_k)
     name_frequency_list = sorted(name_frequency_list, key=lambda nf: -nf[1])[:top_k]
 
     # table html
@@ -325,7 +329,7 @@ def query_id_to_name():
     # expand the umbrella type to real types and query KB
     name_frequency_list = []
     for _type in entity_type_to_real_type_mapping.get(_type, [_type]):
-        name_frequency_list += kb.nen.get_aliases_by_id(_type, _id, max_aliases=top_k)
+        name_frequency_list += nen.get_aliases_by_id(_type, _id, max_aliases=top_k)
     name_frequency_list = sorted(name_frequency_list, key=lambda nf: -nf[1])[:top_k]
     response["name_frequency_list"] = name_frequency_list
 
@@ -370,7 +374,7 @@ def run_var():
 
         # tuple table
         result += html.escape("(Type, ID, Name) tuples with relations in current KB:")
-        type_id_name_frequency_list = kb.nen.get_variant_in_kb(id_list, name_list)
+        type_id_name_frequency_list = nen.get_variant_in_kb(id_list, name_list)
         tuples = len(type_id_name_frequency_list)
         logger.info(f"tuples: {tuples}")
         tuple_table_html = \
@@ -432,7 +436,7 @@ def query_var():
             match["attribute"][key] = value
 
         # tuple_in_kb
-        type_id_name_frequency_list = kb.nen.get_variant_in_kb(id_list, name_list)
+        type_id_name_frequency_list = nen.get_variant_in_kb(id_list, name_list)
         tuples = len(type_id_name_frequency_list)
         logger.info(f"tuples: {tuples}")
         for _type, _id, name, frequency in type_id_name_frequency_list:
@@ -1532,51 +1536,139 @@ def query_litsum():
 def run_gvd_stats():
     arg = json.loads(request.data)
     _type = arg.get("type", "")
-    gene_id = arg.get("gene_id", "")
-    variant_id = arg.get("variant_id", "")
-    disease_id = arg.get("disease_id", "")
+    arg_gene_id = arg.get("gene_id", "")
+    arg_variant_id = arg.get("variant_id", "")
+    arg_disease_id = arg.get("disease_id", "")
+    top_k = arg.get("top_k", None)
+    if top_k:
+        top_k = int(top_k)
+
+    gvd_score_data = gvd_score.query_data(_type, arg_gene_id, arg_variant_id, arg_disease_id)
+
+    ann_list = [
+        "paper", "sentence",
+        "odds_ratio",
+        "cre_Cause-associated", "cre_Appositive", "cre_In-patient",
+        "spacy_ore", "openie_ore",
+        "sort_score",
+    ]
+
+    # table header
+    if "g" in _type:
+        header_list = ["gene", "disease"] + ann_list
+    else:
+        header_list = ["gene", "variant", "disease"] + ann_list
+
+    header_html = "".join(f"<th>{html.escape(header)}</th>" for header in header_list)
+    table_html = f"<table><tr>{header_html}</tr>"
+
+    # table data
+
+    def get_table_cell_for_gene_id(_gene_id):
+        gene_name = ncbi_gene.id_to_name.get(_gene_id, "-")
+        cell = f"({_gene_id}) {gene_name}"
+        cell = f"<td>{html.escape(cell)}</td>"
+        return cell
+
+    def get_table_cell_for_variant_id(_variant_id):
+        _i = _variant_id.find("_")
+        _gene_id, _variant_id = _variant_id[:_i], _variant_id[_i + 1:]
+
+        if _variant_id.startswith("HGVS:"):
+            _variant_id = _variant_id[len("HGVS:"):]
+        else:
+            _variant_id = "rs" + _variant_id[len("RS#:"):]
+
+        _gene_cell = get_table_cell_for_gene_id(_gene_id)
+        _variant_cell = f"<td>{html.escape(_variant_id)}</td>"
+        return _gene_cell, _variant_cell
+
+    def get_table_cell_disease_id(_disease_id):
+        _disease_name = nen.get_most_frequent_name_by_id("Disease", _disease_id)
+
+        if not _disease_name:
+            _disease_name = "-"
+
+        _disease_id = _disease_id[len("MESH:"):]
+
+        cell = f"({_disease_id}) {_disease_name}"
+        cell = f"<td>{html.escape(cell)}</td>"
+        return cell
+
+    def get_table_cell_for_annotation(_ann_to_score):
+        cell_list = []
+
+        for _ann in ann_list:
+            _score = _ann_to_score.get(_ann, 0)
+            if _score:
+                _score = f"{_score:,}"
+            else:
+                _score = "-"
+
+            cell = f"<td>{html.escape(_score)}</td>"
+            cell_list.append(cell)
+
+        cell = "".join(cell_list)
+        return cell
 
     if _type == "gd":
-        key = (gene_id, disease_id)
+        gene_cell = get_table_cell_for_gene_id(arg_gene_id)
+        disease_cell = get_table_cell_disease_id(arg_disease_id)
+        ann_cell = get_table_cell_for_annotation(gvd_score_data)
+        table_html += f"<tr>{gene_cell}{disease_cell}{ann_cell}</tr>"
+
     elif _type == "vd":
-        variant_id = json.loads(variant_id)
-        hgvs = ""
-        rs = ""
-        gene = ""
-        for _id in variant_id:
-            if _id.startswith("HGVS:"):
-                hgvs = _id
-            elif _id.startswith("RS#:"):
-                rs = _id
-            elif _id.startswith("CorrespondingGene:"):
-                gene = _id
-        key = ((hgvs, rs, gene), disease_id)
+        gene_cell, variant_cell = get_table_cell_for_variant_id(arg_variant_id)
+        disease_cell = get_table_cell_disease_id(arg_disease_id)
+        ann_cell = get_table_cell_for_annotation(gvd_score_data)
+        table_html += f"<tr>{gene_cell}{variant_cell}{disease_cell}{ann_cell}</tr>"
+
+    elif _type == "g":
+        gene_cell = get_table_cell_for_gene_id(arg_gene_id)
+        for i, (result_disease_id, ann_to_score) in enumerate(gvd_score_data.items()):
+            if top_k and i >= top_k:
+                break
+            disease_cell = get_table_cell_disease_id(result_disease_id)
+            ann_cell = get_table_cell_for_annotation(ann_to_score)
+            table_html += f"<tr>{gene_cell}{disease_cell}{ann_cell}</tr>"
+
+    elif _type == "v":
+        gene_cell, variant_cell = get_table_cell_for_variant_id(arg_variant_id)
+        for i, (result_disease_id, ann_to_score) in enumerate(gvd_score_data.items()):
+            if top_k and i >= top_k:
+                break
+            disease_cell = get_table_cell_disease_id(result_disease_id)
+            ann_cell = get_table_cell_for_annotation(ann_to_score)
+            table_html += f"<tr>{gene_cell}{variant_cell}{disease_cell}{ann_cell}</tr>"
+
+    elif _type == "d2g":
+        disease_cell = get_table_cell_disease_id(arg_disease_id)
+        for i, (result_gene_id, ann_to_score) in enumerate(gvd_score_data.items()):
+            if top_k and i >= top_k:
+                break
+            gene_cell = get_table_cell_for_gene_id(result_gene_id)
+            ann_cell = get_table_cell_for_annotation(ann_to_score)
+            table_html += f"<tr>{gene_cell}{disease_cell}{ann_cell}</tr>"
+
+    elif _type == "d2v":
+        disease_cell = get_table_cell_disease_id(arg_disease_id)
+        for i, (result_variant_id, ann_to_score) in enumerate(gvd_score_data.items()):
+            if top_k and i >= top_k:
+                break
+            gene_cell, variant_cell = get_table_cell_for_variant_id(result_variant_id)
+            ann_cell = get_table_cell_for_annotation(ann_to_score)
+            table_html += f"<tr>{gene_cell}{variant_cell}{disease_cell}{ann_cell}</tr>"
+
     else:
         assert False
 
-    ner = gvd_ner_score.query_data(_type, key)
-    rel = gvd_rel_score.query_data(_type, key)
+    table_html += "</table>"
 
-    # ner
-    ner_html = "<table><tr><th>Co-occurrence</th><th>Count</th></tr>"
-    for ann, score in ner.items():
-        ann = html.escape(ann)
-        score = html.escape(score)
-        ner_html += f"<tr><td>{ann}</td><td>{score}</td></tr>"
-    ner_html += "</table>"
-
-    # rel
-    rel_html = "<table><tr><th>Annotator</th><th>Score</th></tr>"
-    for ann, score in rel.items():
-        ann = html.escape(ann)
-        score = html.escape(score)
-        rel_html += f"<tr><td>{ann}</td><td>{score}</td></tr>"
-    rel_html += "</table>"
-
-    result = ner_html \
-             + "<br /><br /><br />" \
-             + rel_html \
-             + "<br /><br /><br />"
+    if "v" in _type:
+        width = 1800
+    else:
+        width = 1500
+    result = f'<div style="width: {width}px;">{table_html}</div>'
 
     response = {
         "result": result,
@@ -1591,32 +1683,22 @@ def query_gvd_stats():
     gene_id = arg.get("gene_id", "")
     variant_id = arg.get("variant_id", "")
     disease_id = arg.get("disease_id", "")
+    top_k = arg.get("top_k", None)
 
-    if _type == "gd":
-        key = (gene_id, disease_id)
-    elif _type == "vd":
-        variant_id = json.loads(variant_id)
-        hgvs = ""
-        rs = ""
-        gene = ""
-        for _id in variant_id:
-            if _id.startswith("HGVS:"):
-                hgvs = _id
-            elif _id.startswith("RS#:"):
-                rs = _id
-            elif _id.startswith("CorrespondingGene:"):
-                gene = _id
-        key = ((hgvs, rs, gene), disease_id)
-    else:
-        assert False
+    gvd_score_data = gvd_score.query_data(_type, gene_id, variant_id, disease_id)
 
-    ner = gvd_ner_score.query_data(_type, key)
-    rel = gvd_rel_score.query_data(_type, key)
+    if top_k and _type in ["g", "v", "d2g", "d2v"]:
+        full_gvd_score_data = gvd_score_data
+        gvd_score_data = {}
+        top_k = int(top_k)
+        for i, (k, ann_to_score) in enumerate(full_gvd_score_data.items()):
+            if i >= top_k:
+                break
+            gvd_score_data[k] = ann_to_score
 
     response = {
         "url_argument": arg,
-        "ner": ner,
-        "rel": rel,
+        "result": gvd_score_data,
     }
     return json.dumps(response)
 
@@ -1626,13 +1708,13 @@ def main():
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", default="12345")
 
+    parser.add_argument("--nen_dir")
     parser.add_argument("--meta_dir")
     parser.add_argument("--paper_dir")
     parser.add_argument("--gene_dir")
     parser.add_argument("--variant_dir")
     parser.add_argument("--glof_dir")
-    parser.add_argument("--gvd_ner_score_dir")
-    parser.add_argument("--gvd_rel_score_dir")
+    parser.add_argument("--gvd_score_dir")
 
     parser.add_argument("--kb_type", choices=["relation", "cooccur"])
     parser.add_argument("--kb_dir")
@@ -1642,6 +1724,10 @@ def main():
     for key, value in vars(arg).items():
         if value is not None:
             logger.info(f"[{key}] {value}")
+
+    if arg.nen_dir:
+        global nen
+        nen = NEN(arg.nen_dir)
 
     if arg.meta_dir:
         global kb_meta
@@ -1655,6 +1741,10 @@ def main():
         global v2g
         v2g = V2G(arg.variant_dir, arg.gene_dir)
 
+    if arg.gene_dir:
+        global ncbi_gene
+        ncbi_gene = NCBIGene(arg.gene_dir)
+
     if arg.glof_dir:
         global paper_glof, entity_glof
         paper_glof = PaperKB(arg.glof_dir)
@@ -1663,18 +1753,13 @@ def main():
     if arg.kb_dir and arg.kb_type:
         global kb, kb_type
         kb = KB(arg.kb_dir)
-        kb.load_nen()
         kb.load_data()
         kb.load_index()
         kb_type = arg.kb_type
 
-    if arg.gvd_ner_score_dir:
-        global gvd_ner_score
-        gvd_ner_score = GVDScore(arg.gvd_ner_score_dir)
-
-    if arg.gvd_rel_score_dir:
-        global gvd_rel_score
-        gvd_rel_score = GVDScore(arg.gvd_rel_score_dir)
+    if arg.gvd_score_dir:
+        global gvd_score
+        gvd_score = GVDScore(arg.gvd_score_dir)
 
     global show_aid
     show_aid = arg.show_aid == "true"

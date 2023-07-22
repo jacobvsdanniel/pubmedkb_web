@@ -243,23 +243,27 @@ def filter_frequency(name_to_frequency, ratio=0):
 
 
 class NEN:
-    def __init__(self, data_file):
-        self.type_id_name_frequency = defaultdict(lambda: defaultdict(lambda: {}))
-        self.name_type_id = defaultdict(lambda: defaultdict(lambda: []))
-        self.length_name = defaultdict(lambda: set())
+    def __init__(self, data_dir):
+        self.typeid_name_frequency = None
+        self.typeid_to_most_frequent_name = None
+        self.name_type_id = None
+        self.length_name = None
 
-        if data_file:
-            logger.info(f"Reading {data_file}")
-            with open(data_file, "r", encoding="utf8", newline="") as f:
-                reader = csv.reader(f, dialect="csv")
-                _header = next(reader)
-                tuples = 0
-                for _type, _id, name, frequency in reader:
-                    self.type_id_name_frequency[_type][_id][name] = int(frequency)
-                    self.name_type_id[name][_type].append(_id)
-                    self.length_name[len(name)].add(name)
-                    tuples += 1
-                logger.info(f"Read {tuples:,} tuples")
+        if data_dir:
+            k_file = os.path.join(data_dir, "typeid_name_frequency_key.jsonl")
+            v_file = os.path.join(data_dir, "typeid_name_frequency_value.jsonl")
+            self.typeid_name_frequency = DiskDict(k_file, v_file)
+
+            kv_file = os.path.join(data_dir, "typeid_to_most_frequent_name.json")
+            self.typeid_to_most_frequent_name = read_json(kv_file)
+
+            k_file = os.path.join(data_dir, "name_type_id_key.jsonl")
+            v_file = os.path.join(data_dir, "name_type_id_value.jsonl")
+            self.name_type_id = DiskDict(k_file, v_file)
+
+            k_file = os.path.join(data_dir, "length_name_key.jsonl")
+            v_file = os.path.join(data_dir, "length_name_value.jsonl")
+            self.length_name = DiskDict(k_file, v_file)
         return
 
     def get_names_by_query(self, query, case_sensitive=False, max_length_diff=1, min_similarity=0.85, max_names=20):
@@ -290,7 +294,7 @@ class NEN:
 
     def get_ids_by_name(self, name):
         type_id_frequency_list = [
-            [_type, _id, self.type_id_name_frequency[_type][_id][name]]
+            [_type, _id, self.typeid_name_frequency.get(f"{_type}_{_id}")[name]]
             for _type, id_list in self.name_type_id.get(name, {}).items()
             for _id in id_list
         ]
@@ -300,11 +304,13 @@ class NEN:
     def get_aliases_by_id(self, _type, _id, max_aliases=20):
         alias_frequency_list = [
             [alias, frequency]
-            for alias, frequency in self.type_id_name_frequency.get(_type, {}).get(_id, {}).items()
+            for alias, frequency in self.typeid_name_frequency.get(f"{_type}_{_id}", {}).items()
         ]
-        alias_frequency_list = sorted(alias_frequency_list, key=lambda x: x[1], reverse=True)
         alias_frequency_list = alias_frequency_list[:max_aliases]
         return alias_frequency_list
+
+    def get_most_frequent_name_by_id(self, _type, _id):
+        return self.typeid_to_most_frequent_name.get(f"{_type}_{_id}")
 
     def get_variant_in_kb(self, id_list, name_list):
         type_id_name_frequency = []
@@ -312,7 +318,7 @@ class NEN:
         for _type in entity_type_to_real_type_mapping["VARIANT"]:
             for _id in id_list:
                 for name in name_list:
-                    frequency = self.type_id_name_frequency.get(_type, {}).get(_id, {}).get(name, None)
+                    frequency = self.typeid_name_frequency.get(f"{_type}_{_id}", {}).get(name, None)
                     if frequency is not None:
                         type_id_name_frequency.append((_type, _id, name, frequency))
 
@@ -401,18 +407,28 @@ class V2G:
         return hgvs_frequency, rs_frequency, gene_frequency
 
 
+class NCBIGene:
+    def __init__(self, gene_dir):
+        self.id_to_name = {}
+        self.name_to_id = {}
+
+        if gene_dir:
+            ncbi_file = os.path.join(gene_dir, "ncbi_protein_gene.csv")
+            ncbi_data = read_csv(ncbi_file, "csv")
+            ncbi_header, ncbi_data = ncbi_data[0], ncbi_data[1:]
+            assert ncbi_header == ["tax_id", "gene_id", "gene_name", "gene_alias"]
+            for _tax_id, gene_id, gene_name, _gene_alias in ncbi_data:
+                self.id_to_name[gene_id] = gene_name
+                self.name_to_id[gene_name] = gene_id
+        return
+
+
 class KB:
     def __init__(self, data_dir):
         self.data_dir = data_dir
-        self.nen = NEN(None)
         self.data = {}
         self.key = {}
         self.value = {}
-        return
-
-    def load_nen(self):
-        nen_file = os.path.join(self.data_dir, "nen.csv")
-        self.nen = NEN(nen_file)
         return
 
     def load_data(self, data_type=("sentence", "annotation")):
@@ -815,7 +831,7 @@ class GVDScore:
     def __init__(self, data_dir):
         self.data_dir = data_dir
         self.type_to_dict = {}
-        self.type_list = ["gd", "vd"]
+        self.type_list = ["gdas", "dgas", "vdas", "dvas"]
 
         if data_dir:
             self.load_data()
@@ -823,63 +839,27 @@ class GVDScore:
 
     def load_data(self):
         for _type in self.type_list:
-            value_file = os.path.join(self.data_dir, f"{_type}_value.jsonl")
             key_file = os.path.join(self.data_dir, f"{_type}_key.jsonl")
-
-            if _type == "gd":
-                def key_process(key):
-                    return tuple(key)
-            else:
-                def key_process(key):
-                    return tuple(key[0]), key[1]
-
-            self.type_to_dict[_type] = DiskDict(
-                key_file,
-                value_file,
-                key_process=key_process,
-            )
+            value_file = os.path.join(self.data_dir, f"{_type}_value.jsonl")
+            self.type_to_dict[_type] = DiskDict(key_file, value_file)
         return
 
-    def query_data(self, _type, key):
-        value = self.type_to_dict[_type].get(key, {})
+    def query_data(self, _type, g, v, d):
+        if _type == "gd":
+            value = self.type_to_dict["gdas"].get(g, {}).get(d, {})
+        elif _type == "vd":
+            value = self.type_to_dict["vdas"].get(v, {}).get(d, {})
+        elif _type == "g":
+            value = self.type_to_dict["gdas"].get(g, {})
+        elif _type == "v":
+            value = self.type_to_dict["vdas"].get(v, {})
+        elif _type == "d2g":
+            value = self.type_to_dict["dgas"].get(d, {})
+        elif _type == "d2v":
+            value = self.type_to_dict["dvas"].get(d, {})
+        else:
+            assert False
         return value
-
-
-def test_nen(kb_dir):
-    kb = KB(kb_dir)
-    kb.load_nen()
-
-    # variant query
-    variant_list = query_variant("val600g")
-
-    for id_list, name_list, gene_list in variant_list:
-        logger.info(f"{id_list} {name_list}")
-
-        type_id_name_frequency_list = kb.nen.get_variant_in_kb(id_list, name_list)
-        for _type, _id, name, frequency in type_id_name_frequency_list:
-            logger.info(f"-> in KB: {_type} {_id} {name} {frequency}")
-
-    # other query
-    query = "Metformin"
-    logger.info(f"query: {query}")
-
-    name_similarity_list = kb.nen.get_names_by_query(
-        query, case_sensitive=False, max_length_diff=1, min_similarity=0.85, max_names=10,
-    )
-    names = len(name_similarity_list)
-    logger.info(f"{names:,} names")
-
-    for name, similarity in name_similarity_list:
-        logger.info(f"name: {name}, similarity: {similarity}")
-        type_id_frequency_list = kb.nen.get_ids_by_name(name)
-        ids = len(type_id_frequency_list)
-        logger.info(f"ids: {ids}")
-
-        for _type, _id, id_frequency in type_id_frequency_list:
-            alias_frequency_list = kb.nen.get_aliases_by_id(_type, _id, max_aliases=5)
-            logger.info(f"({_type}, {_id}, {name}, {id_frequency}): alias_list={alias_frequency_list}")
-
-    return
 
 
 def test_v2g(variant_dir, gene_dir):
@@ -1042,7 +1022,6 @@ def main():
         if value is not None:
             logger.info(f"[{key}] {value}")
 
-    # test_nen(arg.kb_dir)
     # test_v2g(arg.variant_dir, arg.gene_dir)
     # test_kb(arg.kb_dir)
     # test_meta(arg.meta_dir)

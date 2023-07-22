@@ -46,18 +46,26 @@
 <br /><br />
 <label style="font-family: Helvetica, sans-serif; font-size: 22px;">Variant ID:</label>
 &nbsp;&nbsp;
-<textarea id="ta_variant_id" spellcheck="false" style="font-size: 18px; width: 700px; height: 26px;">["HGVS:p.V600E", "RS#:113488022", "CorrespondingGene:673"]</textarea>
+<textarea id="ta_variant_id" spellcheck="false" style="font-size: 18px; width: 350px; height: 26px;">673_HGVS:p.V600E</textarea>
 <br /><br />
 <label style="font-family: Helvetica, sans-serif; font-size: 22px;">Disease ID:</label>
 &nbsp;&nbsp;
 <textarea spellcheck="false" id="ta_disease_id" style="font-size: 18px; width: 200px; height: 26px;">MESH:D009369</textarea>
+<br /><br />
+<label style="font-family: Helvetica, sans-serif; font-size: 22px;">Top K:</label>
+&nbsp;&nbsp;
+<textarea spellcheck="false" id="ta_top_k" style="font-size: 18px; width: 200px; height: 26px;">100</textarea>
 <br /><br /><br />
 
-<label style="font-family: Helvetica, sans-serif; font-size: 22px;">Query:</label>
+<label style="font-family: Helvetica, sans-serif; font-size: 22px;">Query by:</label>
 &nbsp;&nbsp;
 <select id="sl_type" style="font-size: 18px; height: 32px;">
-    <option value="gd" selected="selected">(Gene, Disease)</option>
-    <option value="vd">(Variant, Disease)</option>
+    <option value="gd" selected="selected">gene & disease</option>
+    <option value="vd">variant & disease</option>
+    <option value="g">gene & all diseases</option>
+    <option value="v">variant & all diseases</option>
+    <option value="d2g">disease & all genes</option>
+    <option value="d2v">disease & all variants</option>
 </select>
 <br /><br />
 <button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="run_query()">show result</button>
@@ -68,7 +76,7 @@
 <br /><br />
 
 <div style="font-size: 30px; font-family: Arial, Helvetica, sans-serif;">Result<br /><br /></div>
-<div id="div_result" style="width: 500px; font-size: 14px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif;">None</div>
+<div id="div_result" style="width: 800px; font-size: 14px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif;">None</div>
 
 <script type="text/javascript" src="static/gvd_stats.js"></script>
 
