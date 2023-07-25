@@ -165,7 +165,7 @@ def run_name_to_id_alias():
         # alias
         for _type, _id, id_frequency in type_id_frequency_list:
             alias_frequency_list = nen.get_aliases_by_id(_type, _id, max_aliases=max_aliases)
-            logger.info(f"({_type}, {_id}, {name}, {id_frequency}): alias_list={alias_frequency_list}")
+            # logger.info(f"({_type}, {_id}, {name}, {id_frequency}): alias_list={alias_frequency_list}")
 
             type_html = html.escape(_type)
             id_html = html.escape(_id)
@@ -268,7 +268,7 @@ def query_name_to_id_alias():
             ]
 
             match["type_id_alias_list"].append(type_id_alias)
-            logger.info(f"({_type}, {_id}, {name}, {id_frequency}): alias_list={alias_frequency_list}")
+            # logger.info(f"({_type}, {_id}, {name}, {id_frequency}): alias_list={alias_frequency_list}")
 
         response["match_list"].append(match)
 

@@ -2,6 +2,7 @@ import os
 import csv
 import sys
 import json
+import heapq
 import difflib
 import logging
 import argparse
@@ -267,29 +268,72 @@ class NEN:
         return
 
     def get_names_by_query(self, query, case_sensitive=False, max_length_diff=1, min_similarity=0.85, max_names=20):
-        length = len(query)
-        length_min = max(1, length - max_length_diff)
-        length_max = length + max_length_diff
-        name_to_similarity = {}
+        # exact match
+        exact_match_list = [(query, 1.0)] if self.name_type_id.get(query) else []
+        if len(exact_match_list) >= max_names:
+            return exact_match_list
+        max_non_exact_matches = max_names - len(exact_match_list)
 
-        if case_sensitive:
-            matcher = difflib.SequenceMatcher(a=query, autojunk=False)
+        # set up matcher
+        if min_similarity == 1:
+            if case_sensitive:
+                return exact_match_list
+            else:
+                matcher = query.lower()
         else:
-            matcher = difflib.SequenceMatcher(a=query.lower(), autojunk=False)
+            if case_sensitive:
+                matcher = difflib.SequenceMatcher(a=query, autojunk=False)
+            else:
+                matcher = difflib.SequenceMatcher(a=query.lower(), autojunk=False)
 
-        for name_length in range(length_min, length_max + 1):
-            logger.info(f"[{query}]: searching names with length {name_length}/[{length_min}-{length_max}] ...")
-            for name in self.length_name.get(name_length, []):
-                if case_sensitive:
-                    matcher.set_seq2(name)
+        query_length = len(query)
+        name_to_similarity = {}
+        perfect_matches = 0
+
+        for length_diff in range(max_length_diff + 1):
+            sign_list = [0] if length_diff == 0 else [1, -1]
+
+            for sign in sign_list:
+                name_length = query_length + sign * length_diff
+                if name_length < 1:
+                    continue
+                if sign == 0:
+                    sign_string = ""
+                elif sign == 1:
+                    sign_string = f" ({query_length}+{length_diff})"
                 else:
-                    matcher.set_seq2(name.lower())
-                similarity = matcher.ratio()
-                if similarity >= min_similarity:
-                    name_to_similarity[name] = similarity
+                    sign_string = f" ({query_length}-{length_diff})"
+                logger.info(f"[{query}]: searching names with length {name_length}{sign_string} ...")
 
-        name_similarity_list = sorted(name_to_similarity.items(), key=lambda x: (x[0] == query, x[1]), reverse=True)
-        name_similarity_list = name_similarity_list[:max_names]
+                for name in self.length_name.get(name_length, []):
+                    # skip exact match
+                    if name == query:
+                        continue
+
+                    # compute similarity
+                    if min_similarity == 1:
+                        # must be case-insensitive
+                        similarity = 1 if name.lower() == matcher else 0
+                    else:
+                        if case_sensitive:
+                            matcher.set_seq2(name)
+                        else:
+                            matcher.set_seq2(name.lower())
+                        similarity = matcher.ratio()
+
+                    if similarity >= min_similarity:
+                        name_to_similarity[name] = similarity
+                        if similarity == 1:
+                            perfect_matches += 1
+                            if perfect_matches >= max_non_exact_matches:
+                                break
+                if perfect_matches >= max_non_exact_matches:
+                    break
+            if perfect_matches >= max_non_exact_matches:
+                break
+
+        name_similarity_list = heapq.nlargest(max_non_exact_matches, name_to_similarity.items(), key=lambda x: x[1])
+        name_similarity_list = exact_match_list + name_similarity_list
         return name_similarity_list
 
     def get_ids_by_name(self, name):
