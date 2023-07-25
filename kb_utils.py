@@ -247,7 +247,7 @@ class NEN:
     def __init__(self, data_dir):
         self.typeid_name_frequency = None
         self.typeid_to_most_frequent_name = None
-        self.name_type_id = None
+        self.name_type_id_frequency = None
         self.length_name = None
 
         if data_dir:
@@ -258,9 +258,9 @@ class NEN:
             kv_file = os.path.join(data_dir, "typeid_to_most_frequent_name.json")
             self.typeid_to_most_frequent_name = read_json(kv_file)
 
-            k_file = os.path.join(data_dir, "name_type_id_key.jsonl")
-            v_file = os.path.join(data_dir, "name_type_id_value.jsonl")
-            self.name_type_id = DiskDict(k_file, v_file)
+            k_file = os.path.join(data_dir, "name_type_id_frequency_key.jsonl")
+            v_file = os.path.join(data_dir, "name_type_id_frequency_value.jsonl")
+            self.name_type_id_frequency = DiskDict(k_file, v_file)
 
             k_file = os.path.join(data_dir, "length_name_key.jsonl")
             v_file = os.path.join(data_dir, "length_name_value.jsonl")
@@ -269,7 +269,7 @@ class NEN:
 
     def get_names_by_query(self, query, case_sensitive=False, max_length_diff=1, min_similarity=0.85, max_names=20):
         # exact match
-        exact_match_list = [(query, 1.0)] if self.name_type_id.get(query) else []
+        exact_match_list = [(query, 1.0)] if self.name_type_id_frequency.get(query) else []
         if len(exact_match_list) >= max_names:
             return exact_match_list
         max_non_exact_matches = max_names - len(exact_match_list)
@@ -338,9 +338,9 @@ class NEN:
 
     def get_ids_by_name(self, name):
         type_id_frequency_list = [
-            [_type, _id, self.typeid_name_frequency.get(f"{_type}_{_id}")[name]]
-            for _type, id_list in self.name_type_id.get(name, {}).items()
-            for _id in id_list
+            [_type, _id, frequency]
+            for _type, id_to_frequency in self.name_type_id_frequency.get(name, {}).items()
+            for _id, frequency in id_to_frequency.items()
         ]
         type_id_frequency_list = sorted(type_id_frequency_list, key=lambda x: x[2], reverse=True)
         return type_id_frequency_list
