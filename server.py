@@ -44,6 +44,7 @@ paper_nen = PaperKB(None)
 paper_glof = PaperKB(None)
 entity_glof = GeVarToGLOF(None)
 gvd_score = GVDScore(None)
+gd_db = GVDScore(None)
 kb_type = None
 show_aid = False
 
@@ -111,6 +112,11 @@ def serve_litsum():
 @app.route("/gvd_stats")
 def serve_gvd_stats():
     return render_template("gvd_stats.html")
+
+
+@app.route("/gd_db")
+def serve_gd_db():
+    return render_template("gd_db.html")
 
 
 @app.route("/run_name_to_id_alias", methods=["POST"])
@@ -1703,6 +1709,132 @@ def query_gvd_stats():
     return json.dumps(response)
 
 
+@app.route("/run_gd_db", methods=["POST"])
+def run_gd_db():
+    arg = json.loads(request.data)
+    _type = arg.get("type", "")
+    arg_gene_id = arg.get("gene_id", "")
+    arg_disease_id = arg.get("disease_id", "")
+    top_k = arg.get("top_k", None)
+    if top_k:
+        top_k = int(top_k)
+
+    gvd_score_data = gd_db.query_data(_type, arg_gene_id, "", arg_disease_id)
+
+    ann_list = ["clinvar", "panelapp"]
+
+    # table header
+    if "g" in _type:
+        header_list = ["gene", "disease"] + ann_list
+    else:
+        header_list = ["gene", "variant", "disease"] + ann_list
+
+    header_html = "".join(f"<th>{html.escape(header)}</th>" for header in header_list)
+    table_html = f"<table><tr>{header_html}</tr>"
+
+    # table data
+
+    def get_table_cell_for_gene_id(_gene_id):
+        gene_name = ncbi_gene.id_to_name.get(_gene_id, "-")
+        cell = f"({_gene_id}) {gene_name}"
+        cell = f"<td>{html.escape(cell)}</td>"
+        return cell
+
+    def get_table_cell_disease_id(_disease_id):
+        _disease_name = nen.get_most_frequent_name_by_id("Disease", _disease_id)
+
+        if not _disease_name:
+            _disease_name = "-"
+
+        _disease_id = _disease_id[len("MESH:"):]
+
+        cell = f"({_disease_id}) {_disease_name}"
+        cell = f"<td>{html.escape(cell)}</td>"
+        return cell
+
+    def get_table_cell_for_annotation(_ann_to_score):
+        cell_list = []
+
+        for _ann in ann_list:
+            _score = _ann_to_score.get(_ann, 0)
+            if _score:
+                _score = f"{_score:,}"
+            else:
+                _score = "-"
+
+            cell = f"<td>{html.escape(_score)}</td>"
+            cell_list.append(cell)
+
+        cell = "".join(cell_list)
+        return cell
+
+    if _type == "gd":
+        gene_cell = get_table_cell_for_gene_id(arg_gene_id)
+        disease_cell = get_table_cell_disease_id(arg_disease_id)
+        ann_cell = get_table_cell_for_annotation(gvd_score_data)
+        table_html += f"<tr>{gene_cell}{disease_cell}{ann_cell}</tr>"
+
+    elif _type == "g":
+        gene_cell = get_table_cell_for_gene_id(arg_gene_id)
+        for i, (result_disease_id, ann_to_score) in enumerate(gvd_score_data.items()):
+            if top_k and i >= top_k:
+                break
+            disease_cell = get_table_cell_disease_id(result_disease_id)
+            ann_cell = get_table_cell_for_annotation(ann_to_score)
+            table_html += f"<tr>{gene_cell}{disease_cell}{ann_cell}</tr>"
+
+    elif _type == "d2g":
+        disease_cell = get_table_cell_disease_id(arg_disease_id)
+        for i, (result_gene_id, ann_to_score) in enumerate(gvd_score_data.items()):
+            if top_k and i >= top_k:
+                break
+            gene_cell = get_table_cell_for_gene_id(result_gene_id)
+            ann_cell = get_table_cell_for_annotation(ann_to_score)
+            table_html += f"<tr>{gene_cell}{disease_cell}{ann_cell}</tr>"
+
+    else:
+        assert False
+
+    table_html += "</table>"
+
+    if "v" in _type:
+        width = 1800
+    else:
+        width = 1500
+    result = f'<div style="width: {width}px;">{table_html}</div>'
+
+    response = {
+        "result": result,
+    }
+    return json.dumps(response)
+
+
+@app.route("/query_gd_db")
+def query_gd_db():
+    arg = request.args
+    _type = arg.get("type", "")
+    gene_id = arg.get("gene_id", "")
+    disease_id = arg.get("disease_id", "")
+    top_k = arg.get("top_k", None)
+
+    gvd_score_data = gd_db.query_data(_type, gene_id, "", disease_id)
+
+    if top_k and _type in ["g", "v", "d2g", "d2v"]:
+        full_gvd_score_data = gvd_score_data
+        gvd_score_data = {}
+        top_k = int(top_k)
+        for i, (k, ann_to_score) in enumerate(full_gvd_score_data.items()):
+            if i >= top_k:
+                break
+            gvd_score_data[k] = ann_to_score
+
+    response = {
+        "url_argument": arg,
+        "result": gvd_score_data,
+    }
+    return json.dumps(response)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
@@ -1715,6 +1847,7 @@ def main():
     parser.add_argument("--variant_dir")
     parser.add_argument("--glof_dir")
     parser.add_argument("--gvd_score_dir")
+    parser.add_argument("--gd_db_dir")
 
     parser.add_argument("--kb_type", choices=["relation", "cooccur"])
     parser.add_argument("--kb_dir")
@@ -1760,6 +1893,10 @@ def main():
     if arg.gvd_score_dir:
         global gvd_score
         gvd_score = GVDScore(arg.gvd_score_dir)
+
+    if arg.gd_db_dir:
+        global gd_db
+        gd_db = GVDScore(arg.gd_db_dir, type_list=("gdas", "dgas"))
 
     global show_aid
     show_aid = arg.show_aid == "true"

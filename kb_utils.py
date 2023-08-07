@@ -455,15 +455,27 @@ class NCBIGene:
     def __init__(self, gene_dir):
         self.id_to_name = {}
         self.name_to_id = {}
+        self.alias_to_id = {}
 
         if gene_dir:
             ncbi_file = os.path.join(gene_dir, "ncbi_protein_gene.csv")
             ncbi_data = read_csv(ncbi_file, "csv")
             ncbi_header, ncbi_data = ncbi_data[0], ncbi_data[1:]
             assert ncbi_header == ["tax_id", "gene_id", "gene_name", "gene_alias"]
-            for _tax_id, gene_id, gene_name, _gene_alias in ncbi_data:
+            alias_to_id = defaultdict(lambda: [])
+
+            for _tax_id, gene_id, gene_name, gene_alias_list in ncbi_data:
                 self.id_to_name[gene_id] = gene_name
                 self.name_to_id[gene_name] = gene_id
+
+                if gene_alias_list == "-":
+                    continue
+                for gene_alias in gene_alias_list.split("|"):
+                    alias_to_id[gene_alias].append(gene_id)
+
+            for alias, id_list in alias_to_id.items():
+                if len(id_list) == 1:
+                    self.alias_to_id[alias] = id_list[0]
         return
 
 
@@ -872,10 +884,10 @@ class Meta:
 
 
 class GVDScore:
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, type_list=("gdas", "dgas", "vdas", "dvas")):
         self.data_dir = data_dir
         self.type_to_dict = {}
-        self.type_list = ["gdas", "dgas", "vdas", "dvas"]
+        self.type_list = type_list
 
         if data_dir:
             self.load_data()

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Gene-Disease DB</title>
+    <style>
+        table {
+            font-family: Helvetica, sans-serif;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        tr {
+            background-color: #f5f5f5;
+        }
+        tr:hover {
+            background-color: #fcfcfc;
+        }
+        td, th {
+            border: 1px solid #dddddd;
+            text-align: center;
+            padding: 8px;
+        }
+        th {
+            padding-top: 12px;
+            padding-bottom: 12px;
+            text-align: center;
+            background-color: #04AA6D;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+
+<div style="font-size: 16px; font-family: Helvetica, sans-serif; line-height: 1.5;">
+    pubmedKB API:&nbsp;&nbsp;<a href="home">home</a>&nbsp;&nbsp;<a href="gd_db">GD_DB</a>
+</div>
+<br />
+<h1 style="font-family: Helvetica, sans-serif;">Gene-Disease DB</h1>
+<br />
+
+<label style="font-family: Helvetica, sans-serif; font-size: 22px;">Gene ID:</label>
+&nbsp;&nbsp;
+<textarea spellcheck="false" id="ta_gene_id" style="font-size: 18px; width: 200px; height: 26px;">673</textarea>
+<br /><br />
+<label style="font-family: Helvetica, sans-serif; font-size: 22px;">Disease ID:</label>
+&nbsp;&nbsp;
+<textarea spellcheck="false" id="ta_disease_id" style="font-size: 18px; width: 200px; height: 26px;">MESH:D009634</textarea>
+<br /><br />
+<label style="font-family: Helvetica, sans-serif; font-size: 22px;">Top K:</label>
+&nbsp;&nbsp;
+<textarea spellcheck="false" id="ta_top_k" style="font-size: 18px; width: 200px; height: 26px;">100</textarea>
+<br /><br /><br />
+
+<label style="font-family: Helvetica, sans-serif; font-size: 22px;">Query by:</label>
+&nbsp;&nbsp;
+<select id="sl_type" style="font-size: 18px; height: 32px;">
+    <option value="gd" selected="selected">gene & disease</option>
+    <option value="g">gene & all diseases</option>
+    <option value="d2g">disease & all genes</option>
+</select>
+<br /><br />
+<button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="run_query()">show result</button>
+&nbsp;
+<button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="get_json()">get json</button>
+<br />
+<div id="div_status">Ready</div>
+<br /><br />
+
+<div style="font-size: 30px; font-family: Arial, Helvetica, sans-serif;">Result<br /><br /></div>
+<div id="div_result" style="width: 800px; font-size: 14px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif;">None</div>
+
+<script type="text/javascript" src="static/gd_db.js"></script>
+
+</body>
+
+</html>
