@@ -918,6 +918,191 @@ class GVDScore:
         return value
 
 
+class MESHNode:
+    def __init__(self, graph_data, index):
+        self.index = index
+        datum = graph_data[index]
+
+        if datum[0][0] == "D":
+            self.is_supplemental = False
+            self.mesh, self.display_name, self.parent_list, self.child_list, self.supplemental_list = datum
+            self.descriptor_list = []
+
+        else:
+            self.is_supplemental = True
+            self.mesh, self.display_name, self.descriptor_list = datum
+            self.parent_list = []
+            self.child_list = []
+            self.supplemental_list = []
+
+        self.label = ""
+        return
+
+    def get_dictionary(self):
+        data = {
+            "index": self.index,
+            "is_supplemental": self.is_supplemental,
+            "mesh": self.mesh,
+            "display_name": self.display_name,
+            "parent_list": self.parent_list,
+            "child_list": self.child_list,
+            "supplemental_list": self.supplemental_list,
+            "descriptor_list": self.descriptor_list,
+            "label": self.label,
+        }
+        return data
+
+
+class MESHGraph:
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self.mesh_to_name = {}
+        self.graph_data = []
+        self.mesh_to_index = {}
+
+        if data_dir:
+            self.load_data()
+        return
+
+    def load_data(self):
+        descriptor_file = os.path.join(self.data_dir, "raw_json", "desc2023.jsonl")
+        supplemental_file = os.path.join(self.data_dir, "raw_json", "supp2023_clean.jsonl")
+        graph_file = os.path.join(self.data_dir, "graph", "graph.jsonl")
+
+        # read name data
+        self.mesh_to_name = {}
+
+        for name_file in [descriptor_file, supplemental_file]:
+            with open(name_file, "r", encoding="utf8") as f:
+                for line in f:
+                    mesh, name, alias_list, _ = json.loads(line)
+                    self.mesh_to_name[mesh] = {
+                        "name": name,
+                        "term_list": alias_list,
+                    }
+
+        # read graph
+        self.graph_data = []
+        self.mesh_to_index = {}
+
+        with open(graph_file, "r", encoding="utf8") as f:
+            for line in f:
+                datum = json.loads(line)
+                self.mesh_to_index[datum[0]] = len(self.graph_data)
+                self.graph_data.append(datum)
+        return
+
+    def get_name(self, mesh):
+        if mesh.startswith("MESH:"):
+            mesh = mesh[len("MESH:"):]
+        data = self.mesh_to_name.get(mesh, {"name": "", "term_list": []})
+        return data
+
+    def add_and_get_node(self, index, label, subgraph_index_to_node):
+        if index in subgraph_index_to_node:
+            node = subgraph_index_to_node[index]
+        else:
+            node = MESHNode(self.graph_data, index)
+            node.label = label
+            subgraph_index_to_node[index] = node
+        return node
+
+    def get_subgraph(
+            self, query_mesh,
+            max_super_level=3, max_sub_level=1, max_sub_nodes=20, max_sibling_nodes=20, max_supplemental_nodes=20,
+    ):
+        index_to_node = {}
+        edge_set = set()
+
+        # query
+        if query_mesh.startswith("MESH:"):
+            query_mesh = query_mesh[len("MESH:"):]
+        if query_mesh not in self.mesh_to_index:
+            return {
+                "index_to_node": {},
+                "edge_list": [],
+            }
+
+        query_index = self.mesh_to_index[query_mesh]
+        query_node = self.add_and_get_node(query_index, "query", index_to_node)
+
+        # ancestor
+        this_level = [(query_index, query_node)]
+        for _ in range(max_super_level):
+            next_level = []
+            for node_index, node in this_level:
+                for parent_index in node.parent_list:
+                    parent_node = self.add_and_get_node(parent_index, "super-category", index_to_node)
+                    edge_set.add((parent_index, node_index))
+                    next_level.append((parent_index, parent_node))
+            this_level = next_level
+        del this_level
+
+        # descendant
+        this_level = [(query_index, query_node)]
+        sub_nodes = 0
+        for _ in range(max_sub_level):
+            if sub_nodes >= max_sub_nodes:
+                break
+            next_level = []
+            for node_index, node in this_level:
+                if sub_nodes >= max_sub_nodes:
+                    break
+                for child_index in node.child_list:
+                    if sub_nodes >= max_sub_nodes:
+                        break
+                    child_node = self.add_and_get_node(child_index, "sub-category", index_to_node)
+                    edge_set.add((node_index, child_index))
+                    next_level.append((child_index, child_node))
+                    sub_nodes += 1
+            this_level = next_level
+        del this_level
+
+        # sibling
+        sibling_nodes = 0
+        for parent_index in query_node.parent_list:
+            if sibling_nodes >= max_sibling_nodes:
+                break
+            edge_set.add((parent_index, query_index))
+            parent_node = self.add_and_get_node(parent_index, "super-category", index_to_node)
+            for sibling_index in parent_node.child_list:
+                if sibling_nodes >= max_sibling_nodes:
+                    break
+                edge_set.add((parent_index, sibling_index))
+                _sibling_node = self.add_and_get_node(sibling_index, "sibling", index_to_node)
+                sibling_nodes += 1
+
+        # supplemental
+        if query_node.is_supplemental:
+            for descriptor_index in query_node.descriptor_list:
+                _descriptor_node = self.add_and_get_node(descriptor_index, "descriptor", index_to_node)
+                edge_set.add((descriptor_index, query_index))
+
+        else:
+            supplemental_nodes = 0
+            node_index_list = list(index_to_node.keys())
+            for node_index in node_index_list:
+                if supplemental_nodes >= max_supplemental_nodes:
+                    break
+                node = index_to_node[node_index]
+                for supplemental_index in node.supplemental_list:
+                    if supplemental_nodes >= max_supplemental_nodes:
+                        break
+                    _supplemental_node = self.add_and_get_node(supplemental_index, "supplemental", index_to_node)
+                    edge_set.add((node_index, supplemental_index))
+                    supplemental_nodes += 1
+
+        # dictionary
+        data = {
+            "index_to_node": {
+                index: node.get_dictionary()
+                for index, node in index_to_node.items()
+            },
+            "edge_list": sorted(edge_set),
+        }
+        return data
+
+
 def test_v2g(variant_dir, gene_dir):
     v2g = V2G(variant_dir, gene_dir)
 

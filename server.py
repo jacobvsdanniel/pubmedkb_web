@@ -11,6 +11,7 @@ from collections import defaultdict
 from flask import Flask, render_template, request
 
 from kb_utils import query_variant, NEN, V2G, NCBIGene, KB, PaperKB, GeVarToGLOF, Meta, GVDScore
+from kb_utils import MESHGraph
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from summary_utils import Summary
 from variant_report_json import clinical_report as ClinicalReport
@@ -45,6 +46,7 @@ paper_glof = PaperKB(None)
 entity_glof = GeVarToGLOF(None)
 gvd_score = GVDScore(None)
 gd_db = GVDScore(None)
+mesh_disease_graph = MESHGraph(None)
 kb_type = None
 show_aid = False
 
@@ -117,6 +119,11 @@ def serve_gvd_stats():
 @app.route("/gd_db")
 def serve_gd_db():
     return render_template("gd_db.html")
+
+
+@app.route("/mesh_disease")
+def serve_mesh_disease():
+    return render_template("mesh_disease.html")
 
 
 @app.route("/run_name_to_id_alias", methods=["POST"])
@@ -1835,6 +1842,196 @@ def query_gd_db():
     return json.dumps(response)
 
 
+@app.route("/run_mesh_disease", methods=["POST"])
+def run_mesh_disease():
+    data = json.loads(request.data)
+
+    query = data["query"].strip()
+    super_level = data["super_level"]
+    sub_level = data["sub_level"]
+    sub_nodes = data["sub_nodes"]
+    sibling_nodes = data["sibling_nodes"]
+    supplemental_nodes = data["supplemental_nodes"]
+
+    if query.startswith("MESH:"):
+        query = query[len("MESH:"):]
+
+    try:
+        super_level = int(super_level)
+    except ValueError:
+        super_level = 3
+
+    try:
+        sub_level = int(sub_level)
+    except ValueError:
+        sub_level = 1
+
+    try:
+        sub_nodes = int(sub_nodes)
+    except ValueError:
+        sub_nodes = 20
+
+    try:
+        sibling_nodes = int(sibling_nodes)
+    except ValueError:
+        sibling_nodes = 0
+
+    try:
+        supplemental_nodes = int(supplemental_nodes)
+    except ValueError:
+        supplemental_nodes = 0
+
+    logger.info(
+        f"query={query}"
+        f" super_level={super_level}"
+        f" sub_level={sub_level}"
+        f" sub_nodes={sub_nodes}"
+        f" sibling_nodes={sibling_nodes}"
+        f" supplemental_nodes={supplemental_nodes}"
+    )
+
+    # name
+    name_data = mesh_disease_graph.get_name(query)
+    name = name_data["name"]
+    term_list = name_data["term_list"]
+    alnum_term_list = []
+    non_alnum_term_list = []
+    for term in term_list:
+        if term.replace(" ", "").isalnum():
+            alnum_term_list.append(term)
+        else:
+            non_alnum_term_list.append(term)
+    term_list = alnum_term_list + non_alnum_term_list
+
+    name_result = \
+        '<span style="font-size: 20px;">' \
+        f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={query}">[{html.escape(query)}]</a> {name}' \
+        '</span>'
+    name_result += '<br /><br /><span style="font-size: 20px;">Term List:</span><br />'
+    term_list = [html.escape(term) for term in term_list]
+    name_result += " &nbsp&nbsp | &nbsp&nbsp ".join(term_list)
+    name_result += '<br /><br /><span style="font-size: 20px;">Ontology Subgraph:</span><br />'
+
+    # subgraph
+    subgraph = mesh_disease_graph.get_subgraph(
+        query,
+        super_level,
+        sub_level,
+        sub_nodes,
+        sibling_nodes,
+        supplemental_nodes,
+    )
+    nodes = len(subgraph["index_to_node"])
+    edges = len(subgraph["edge_list"])
+    logger.info(f"{nodes:,} nodes; {edges:,} edges")
+
+    # node
+    node_list = []
+    label_to_color = {
+        "query": "#d5abff",  # 270°, 33%, 100% violet
+        "sub-category": "#abffff",  # 180°, 33%, 100% cyan
+        "super-category": "#d5ffab",  # 90°, 33%, 100% yellow-green
+        "sibling": "#ffffab",  # 60°, 33%, 100% yellow
+        "supplemental": "#ffd5ab",  # 30°, 33%, 100% orange
+        "descriptor": "#ffabab",  # 0°, 33%, 100% red
+    }
+
+    for index, raw_node in subgraph["index_to_node"].items():
+        mesh = raw_node["mesh"]
+        display_name = raw_node["display_name"]
+        label = raw_node["label"]
+
+        node = {
+            "id": index,
+            "label": f"{mesh}\n{display_name}",
+            "color": label_to_color[label],
+        }
+        node_list.append(node)
+
+    # edge
+    edge_list = []
+    for from_index, to_index in subgraph["edge_list"]:
+        edge = {
+            "from": from_index,
+            "to": to_index,
+            "arrows": {"to": {"enabled": True, "type": "arrow"}},
+        }
+        edge_list.append(edge)
+
+    response = {
+        "result": name_result,
+        "node_list": node_list,
+        "edge_list": edge_list,
+    }
+    return json.dumps(response)
+
+
+@app.route("/query_mesh_disease")
+def query_mesh_disease():
+    # url argument
+    query = request.args.get("query")
+    super_level = request.args.get("super_level")
+    sub_level = request.args.get("sub_level")
+    sub_nodes = request.args.get("sub_nodes")
+    sibling_nodes = request.args.get("sibling_nodes")
+    supplemental_nodes = request.args.get("supplemental_nodes")
+
+    try:
+        super_level = int(super_level)
+    except ValueError:
+        super_level = 3
+
+    try:
+        sub_level = int(sub_level)
+    except ValueError:
+        sub_level = 1
+
+    try:
+        sub_nodes = int(sub_nodes)
+    except ValueError:
+        sub_nodes = 20
+
+    try:
+        sibling_nodes = int(sibling_nodes)
+    except ValueError:
+        sibling_nodes = 20
+
+    try:
+        supplemental_nodes = int(supplemental_nodes)
+    except ValueError:
+        supplemental_nodes = 0
+
+    logger.info(
+        f"query={query}"
+        f" super_level={super_level}"
+        f" sub_level={sub_level}"
+        f" sub_nodes={sub_nodes}"
+        f" sibling_nodes={sibling_nodes}"
+        f" supplemental_nodes={supplemental_nodes}"
+    )
+
+    name_data = mesh_disease_graph.get_name(query)
+    name = name_data["name"]
+    term_list = name_data["term_list"]
+
+    subgraph = mesh_disease_graph.get_subgraph(
+        query,
+        super_level,
+        sub_level,
+        sub_nodes,
+        sibling_nodes,
+        supplemental_nodes,
+    )
+
+    response = {
+        "url_argument": request.args,
+        "name": name,
+        "term_list": term_list,
+        "subgraph": subgraph,
+    }
+    return json.dumps(response)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
@@ -1848,6 +2045,7 @@ def main():
     parser.add_argument("--glof_dir")
     parser.add_argument("--gvd_score_dir")
     parser.add_argument("--gd_db_dir")
+    parser.add_argument("--mesh_disease_dir")
 
     parser.add_argument("--kb_type", choices=["relation", "cooccur"])
     parser.add_argument("--kb_dir")
@@ -1897,6 +2095,10 @@ def main():
     if arg.gd_db_dir:
         global gd_db
         gd_db = GVDScore(arg.gd_db_dir, type_list=("gdas", "dgas"))
+
+    if arg.mesh_disease_dir:
+        global mesh_disease_graph
+        mesh_disease_graph = MESHGraph(arg.mesh_disease_dir)
 
     global show_aid
     show_aid = arg.show_aid == "true"
