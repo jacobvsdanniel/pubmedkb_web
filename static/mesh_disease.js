@@ -48,7 +48,9 @@ function run_query(){
     document.getElementById("div_status").innerHTML = "Loading...";
 
     request_data = {
-        "query": document.getElementById("ta_query").value,
+        "query_type": document.getElementById("sl_query_type").value,
+        "query_id": document.getElementById("ta_query_id").value,
+        "query_term": document.getElementById("ta_query_term").value,
         "super_level": document.getElementById("ta_super_level").value,
         "sub_level": document.getElementById("ta_sub_level").value,
         "sub_nodes": document.getElementById("ta_sub_nodes").value,
@@ -81,21 +83,27 @@ function run_query(){
 }
 
 function get_json(){
-    query = document.getElementById("ta_query").value;
+    query_type = document.getElementById("sl_query_type").value;
+    query_id = document.getElementById("ta_query_id").value;
+    query_term = document.getElementById("ta_query_term").value;
     super_level = document.getElementById("ta_super_level").value;
     sub_level = document.getElementById("ta_sub_level").value;
     sub_nodes = document.getElementById("ta_sub_nodes").value;
     sibling_nodes = document.getElementById("ta_sibling_nodes").value;
     supplemental_nodes = document.getElementById("ta_supplemental_nodes").value;
 
-    query = encodeURIComponent(query)
+    query_type = encodeURIComponent(query_type)
+    query_id = encodeURIComponent(query_id)
+    query_term = encodeURIComponent(query_term)
     super_level = encodeURIComponent(super_level)
     sub_level = encodeURIComponent(sub_level)
     sub_nodes = encodeURIComponent(sub_nodes)
     sibling_nodes = encodeURIComponent(sibling_nodes)
     supplemental_nodes = encodeURIComponent(supplemental_nodes)
 
-    url = `./query_mesh_disease?query=${query}`
+    url = `./query_mesh_disease?query_type=${query_type}`
+    url = `${url}&query_id=${query_id}`
+    url = `${url}&query_term=${query_term}`
     url = `${url}&super_level=${super_level}`
     url = `${url}&sub_level=${sub_level}`
     url = `${url}&sub_nodes=${sub_nodes}`

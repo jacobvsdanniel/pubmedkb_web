@@ -1846,15 +1846,20 @@ def query_gd_db():
 def run_mesh_disease():
     data = json.loads(request.data)
 
-    query = data["query"].strip()
+    query_type = data["query_type"]
+    query_id = data["query_id"]
+    query_term = data["query_term"]
     super_level = data["super_level"]
     sub_level = data["sub_level"]
     sub_nodes = data["sub_nodes"]
     sibling_nodes = data["sibling_nodes"]
     supplemental_nodes = data["supplemental_nodes"]
 
-    if query.startswith("MESH:"):
-        query = query[len("MESH:"):]
+    query_id = query_id.strip()
+    if query_id.startswith("MESH:"):
+        query_id = query_id[len("MESH:"):]
+
+    query_term = query_term.strip().lower()
 
     try:
         super_level = int(super_level)
@@ -1882,13 +1887,23 @@ def run_mesh_disease():
         supplemental_nodes = 0
 
     logger.info(
-        f"query={query}"
+        f"query_type={query_type}"
+        f" query_id={query_id}"
+        f" query_term={query_term}"
         f" super_level={super_level}"
         f" sub_level={sub_level}"
         f" sub_nodes={sub_nodes}"
         f" sibling_nodes={sibling_nodes}"
         f" supplemental_nodes={supplemental_nodes}"
     )
+
+    # mesh
+    if query_type == "mesh":
+        query = query_id
+    elif query_type == "term":
+        query = mesh_disease_graph.name_to_mesh.get(query_term, "")
+    else:
+        assert False
 
     # name
     name_data = mesh_disease_graph.get_name(query)
@@ -1925,7 +1940,7 @@ def run_mesh_disease():
     edges = len(subgraph["edge_list"])
     logger.info(f"{nodes:,} nodes; {edges:,} edges")
 
-    # node
+    # vis node
     node_list = []
     label_to_color = {
         "query": "#d5abff",  # 270°, 33%, 100% violet
@@ -1948,7 +1963,7 @@ def run_mesh_disease():
         }
         node_list.append(node)
 
-    # edge
+    # vis edge
     edge_list = []
     for from_index, to_index in subgraph["edge_list"]:
         edge = {
@@ -1969,12 +1984,20 @@ def run_mesh_disease():
 @app.route("/query_mesh_disease")
 def query_mesh_disease():
     # url argument
-    query = request.args.get("query")
+    query_type = request.args.get("query_type")
+    query_id = request.args.get("query_id")
+    query_term = request.args.get("query_term")
     super_level = request.args.get("super_level")
     sub_level = request.args.get("sub_level")
     sub_nodes = request.args.get("sub_nodes")
     sibling_nodes = request.args.get("sibling_nodes")
     supplemental_nodes = request.args.get("supplemental_nodes")
+
+    query_id = query_id.strip()
+    if query_id.startswith("MESH:"):
+        query_id = query_id[len("MESH:"):]
+
+    query_term = query_term.strip().lower()
 
     try:
         super_level = int(super_level)
@@ -2002,7 +2025,9 @@ def query_mesh_disease():
         supplemental_nodes = 0
 
     logger.info(
-        f"query={query}"
+        f"query_type={query_type}"
+        f" query_id={query_id}"
+        f" query_term={query_term}"
         f" super_level={super_level}"
         f" sub_level={sub_level}"
         f" sub_nodes={sub_nodes}"
@@ -2010,10 +2035,20 @@ def query_mesh_disease():
         f" supplemental_nodes={supplemental_nodes}"
     )
 
+    # mesh
+    if query_type == "mesh":
+        query = query_id
+    elif query_type == "term":
+        query = mesh_disease_graph.name_to_mesh.get(query_term, "")
+    else:
+        assert False
+
+    # name
     name_data = mesh_disease_graph.get_name(query)
     name = name_data["name"]
     term_list = name_data["term_list"]
 
+    # subgraph
     subgraph = mesh_disease_graph.get_subgraph(
         query,
         super_level,

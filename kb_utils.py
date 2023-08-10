@@ -957,6 +957,7 @@ class MESHGraph:
     def __init__(self, data_dir):
         self.data_dir = data_dir
         self.mesh_to_name = {}
+        self.name_to_mesh = {}
         self.graph_data = []
         self.mesh_to_index = {}
 
@@ -976,10 +977,15 @@ class MESHGraph:
             with open(name_file, "r", encoding="utf8") as f:
                 for line in f:
                     mesh, name, alias_list, _ = json.loads(line)
+
                     self.mesh_to_name[mesh] = {
                         "name": name,
                         "term_list": alias_list,
                     }
+
+                    self.name_to_mesh[name.lower()] = mesh
+                    for alias in alias_list:
+                        self.name_to_mesh[alias.lower()] = mesh
 
         # read graph
         self.graph_data = []

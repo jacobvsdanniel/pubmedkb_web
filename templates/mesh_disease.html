@@ -57,9 +57,20 @@
 <textarea spellcheck="false" id="ta_supplemental_nodes" style="font-size: 14px; width: 50px; height: 18px;">0</textarea>
 <br /><br /><br />
 
-<label style="font-size: 22px;">Query:</label>
+<label style="font-size: 20px; font-family: Arial, Helvetica, sans-serif;">Query by:</label>
 &nbsp;&nbsp;
-<textarea spellcheck="false" id="ta_query" style="font-size: 22px; width: 500px; height: 26px;">MESH:D013964</textarea>
+<select id="sl_query_type" style="font-size: 18px; height: 32px; font-family: Arial, Helvetica, sans-serif;">
+    <option value="mesh">MeSH ID</option>
+    <option value="term" selected="selected">MeSH Term</option>
+</select>
+&nbsp;&nbsp;&nbsp;&nbsp;
+<label style="font-size: 20px; font-family: Arial, Helvetica, sans-serif;">MeSH ID:</label>
+&nbsp;&nbsp;
+<textarea spellcheck="false" id="ta_query_id" style="font-size: 18px; width: 200px; height: 26px;">MESH:D013964</textarea>
+&nbsp;&nbsp;&nbsp;&nbsp;
+<label style="font-size: 20px; font-family: Arial, Helvetica, sans-serif;">MeSH Term:</label>
+&nbsp;&nbsp;
+<textarea spellcheck="false" id="ta_query_term" style="font-size: 18px; width: 400px; height: 26px;">thyroid cancer</textarea>
 <br /><br />
 <button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="run_query()">show graph</button>
 &nbsp;
