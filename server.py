@@ -11,7 +11,7 @@ from collections import defaultdict
 from flask import Flask, render_template, request
 
 from kb_utils import query_variant, NEN, V2G, NCBIGene, KB, PaperKB, GeVarToGLOF, Meta, GVDScore
-from kb_utils import MESHGraph
+from kb_utils import MESHNameKB, MESHGraph
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from summary_utils import Summary
 from variant_report_json import clinical_report as ClinicalReport
@@ -46,7 +46,8 @@ paper_glof = PaperKB(None)
 entity_glof = GeVarToGLOF(None)
 gvd_score = GVDScore(None)
 gd_db = GVDScore(None)
-mesh_disease_graph = MESHGraph(None)
+mesh_name_kb = MESHNameKB(None)
+mesh_graph = MESHGraph(None)
 kb_type = None
 show_aid = False
 
@@ -1847,19 +1848,14 @@ def run_mesh_disease():
     data = json.loads(request.data)
 
     query_type = data["query_type"]
-    query_id = data["query_id"]
-    query_term = data["query_term"]
+    query = data["query"]
     super_level = data["super_level"]
     sub_level = data["sub_level"]
     sub_nodes = data["sub_nodes"]
     sibling_nodes = data["sibling_nodes"]
     supplemental_nodes = data["supplemental_nodes"]
 
-    query_id = query_id.strip()
-    if query_id.startswith("MESH:"):
-        query_id = query_id[len("MESH:"):]
-
-    query_term = query_term.strip().lower()
+    query = query.strip()
 
     try:
         super_level = int(super_level)
@@ -1888,8 +1884,7 @@ def run_mesh_disease():
 
     logger.info(
         f"query_type={query_type}"
-        f" query_id={query_id}"
-        f" query_term={query_term}"
+        f" query={query}"
         f" super_level={super_level}"
         f" sub_level={sub_level}"
         f" sub_nodes={sub_nodes}"
@@ -1898,38 +1893,75 @@ def run_mesh_disease():
     )
 
     # mesh
+    prefix = "MESH:"
+
     if query_type == "mesh":
-        query = query_id
-    elif query_type == "term":
-        query = mesh_disease_graph.name_to_mesh.get(query_term, "")
+        if query.startswith(prefix):
+            query = query[len(prefix):]
+        if query in mesh_name_kb.mesh_to_mesh_name:
+            mesh_list = [query]
+        else:
+            mesh_list = []
+
+    elif query_type == "mesh_name":
+        mesh_list = mesh_name_kb.mesh_name_to_mesh.get(query.lower(), [])
+        mesh_list = list(mesh_list)
+
+    elif query_type == "hpo":
+        mesh_list = mesh_name_kb.hpo_to_mesh.get(query, [])
+        mesh_list = list(mesh_list)
+
+    elif query_type == "hpo_name":
+        mesh_list = mesh_name_kb.hpo_name_to_mesh.get(query.lower(), [])
+        mesh_list = list(mesh_list)
+
+    elif query_type == "literature_name":
+        mesh_list = mesh_name_kb.literature_name_to_mesh.get(query.lower(), [])
+        mesh_list = list(mesh_list)
+
+    elif query_type == "all_name":
+        mesh_list = mesh_name_kb.get_mesh_id_by_all_source_name(query)
+        mesh_list = list(mesh_list)
+
     else:
         assert False
 
-    # name
-    name_data = mesh_disease_graph.get_name(query)
-    name = name_data["name"]
-    term_list = name_data["term_list"]
-    alnum_term_list = []
-    non_alnum_term_list = []
-    for term in term_list:
-        if term.replace(" ", "").isalnum():
-            alnum_term_list.append(term)
-        else:
-            non_alnum_term_list.append(term)
-    term_list = alnum_term_list + non_alnum_term_list
+    for i, mesh in enumerate(mesh_list):
+        if not mesh.startswith(prefix):
+            mesh_list[i] = prefix + mesh
 
-    name_result = \
-        '<span style="font-size: 20px;">' \
-        f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={query}">[{html.escape(query)}]</a> {name}' \
-        '</span>'
-    name_result += '<br /><br /><span style="font-size: 20px;">Term List:</span><br />'
-    term_list = [html.escape(term) for term in term_list]
-    name_result += " &nbsp&nbsp | &nbsp&nbsp ".join(term_list)
-    name_result += '<br /><br /><span style="font-size: 20px;">Ontology Subgraph:</span><br />'
+    # name
+    mesh_to_namelist = {
+        mesh: mesh_name_kb.get_mesh_name_by_mesh_id(mesh)
+        for mesh in mesh_list
+    }
+
+    name_table_html = \
+        f"<table><tr>" \
+        f"<th>MeSH ID</th>" \
+        f"<th>MeSH Name</th>" \
+        f"<th>MeSH Aliases</th>" \
+        f"</tr>"
+
+    for mesh, name_list in mesh_to_namelist.items():
+        mesh_html = f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={mesh[len(prefix):]}">{html.escape(mesh)}</a>'
+        name_html = html.escape(f"{name_list[0]}")
+        alias_html = [html.escape(alias) for alias in name_list[1:]]
+        alias_html = "&nbsp;&nbsp;&nbsp;&nbsp;".join(alias_html)
+
+        name_table_html += \
+            f"<tr>" \
+            f"<td>{mesh_html}</td>" \
+            f"<td>{name_html}</td>" \
+            f"<td>{alias_html}</td>" \
+            f"</tr>"
+
+    name_table_html += "</table>"
+    name_result = name_table_html + '<br /><br /><span style="font-size: 20px;">Ontology Subgraph:</span><br />'
 
     # subgraph
-    subgraph = mesh_disease_graph.get_subgraph(
-        query,
+    subgraph = mesh_graph.get_subgraph(
+        mesh_list,
         super_level,
         sub_level,
         sub_nodes,
@@ -1969,6 +2001,7 @@ def run_mesh_disease():
         edge = {
             "from": from_index,
             "to": to_index,
+            "length": 150,
             "arrows": {"to": {"enabled": True, "type": "arrow"}},
         }
         edge_list.append(edge)
@@ -1985,19 +2018,14 @@ def run_mesh_disease():
 def query_mesh_disease():
     # url argument
     query_type = request.args.get("query_type")
-    query_id = request.args.get("query_id")
-    query_term = request.args.get("query_term")
+    query = request.args.get("query")
     super_level = request.args.get("super_level")
     sub_level = request.args.get("sub_level")
     sub_nodes = request.args.get("sub_nodes")
     sibling_nodes = request.args.get("sibling_nodes")
     supplemental_nodes = request.args.get("supplemental_nodes")
 
-    query_id = query_id.strip()
-    if query_id.startswith("MESH:"):
-        query_id = query_id[len("MESH:"):]
-
-    query_term = query_term.strip().lower()
+    query = query.strip()
 
     try:
         super_level = int(super_level)
@@ -2026,8 +2054,7 @@ def query_mesh_disease():
 
     logger.info(
         f"query_type={query_type}"
-        f" query_id={query_id}"
-        f" query_term={query_term}"
+        f" query={query}"
         f" super_level={super_level}"
         f" sub_level={sub_level}"
         f" sub_nodes={sub_nodes}"
@@ -2036,32 +2063,65 @@ def query_mesh_disease():
     )
 
     # mesh
+    prefix = "MESH:"
+
     if query_type == "mesh":
-        query = query_id
-    elif query_type == "term":
-        query = mesh_disease_graph.name_to_mesh.get(query_term, "")
+        if query.startswith(prefix):
+            query = query[len(prefix):]
+        if query in mesh_name_kb.mesh_to_mesh_name:
+            mesh_list = [query]
+        else:
+            mesh_list = []
+
+    elif query_type == "mesh_name":
+        mesh_list = mesh_name_kb.mesh_name_to_mesh.get(query.lower(), [])
+        mesh_list = list(mesh_list)
+
+    elif query_type == "hpo":
+        mesh_list = mesh_name_kb.hpo_to_mesh.get(query, [])
+        mesh_list = list(mesh_list)
+
+    elif query_type == "hpo_name":
+        mesh_list = mesh_name_kb.hpo_name_to_mesh.get(query.lower(), [])
+        mesh_list = list(mesh_list)
+
+    elif query_type == "literature_name":
+        mesh_list = mesh_name_kb.literature_name_to_mesh.get(query.lower(), [])
+        mesh_list = list(mesh_list)
+
+    elif query_type == "all_name":
+        mesh_list = mesh_name_kb.get_mesh_id_by_all_source_name(query)
+        mesh_list = list(mesh_list)
+
     else:
         assert False
 
+    for i, mesh in enumerate(mesh_list):
+        if not mesh.startswith(prefix):
+            mesh_list[i] = prefix + mesh
+
     # name
-    name_data = mesh_disease_graph.get_name(query)
-    name = name_data["name"]
-    term_list = name_data["term_list"]
+    mesh_to_namelist = {
+        mesh: mesh_name_kb.get_mesh_name_by_mesh_id(mesh)
+        for mesh in mesh_list
+    }
 
     # subgraph
-    subgraph = mesh_disease_graph.get_subgraph(
-        query,
+    subgraph = mesh_graph.get_subgraph(
+        mesh_list,
         super_level,
         sub_level,
         sub_nodes,
         sibling_nodes,
         supplemental_nodes,
     )
+    nodes = len(subgraph["index_to_node"])
+    edges = len(subgraph["edge_list"])
+    logger.info(f"{nodes:,} nodes; {edges:,} edges")
 
     response = {
         "url_argument": request.args,
-        "name": name,
-        "term_list": term_list,
+        "mesh_to_namelist": mesh_to_namelist,
         "subgraph": subgraph,
     }
     return json.dumps(response)
@@ -2132,8 +2192,9 @@ def main():
         gd_db = GVDScore(arg.gd_db_dir, type_list=("gdas", "dgas"))
 
     if arg.mesh_disease_dir:
-        global mesh_disease_graph
-        mesh_disease_graph = MESHGraph(arg.mesh_disease_dir)
+        global mesh_name_kb, mesh_graph
+        mesh_name_kb = MESHNameKB(arg.mesh_disease_dir)
+        mesh_graph = MESHGraph(arg.mesh_disease_dir)
 
     global show_aid
     show_aid = arg.show_aid == "true"

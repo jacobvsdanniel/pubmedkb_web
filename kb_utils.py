@@ -918,6 +918,99 @@ class GVDScore:
         return value
 
 
+class MESHNameKB:
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+
+        self.mesh_to_mesh_name = {}
+
+        self.mesh_name_to_mesh = {}
+        self.hpo_to_mesh = {}
+        self.hpo_name_to_mesh = {}
+        self.literature_name_to_mesh = {}
+
+        if data_dir:
+            self.load_data()
+        return
+
+    def load_mesh_data(self):
+        descriptor_file = os.path.join(self.data_dir, "raw_json", "desc2023.jsonl")
+        supplemental_file = os.path.join(self.data_dir, "raw_json", "supp2023_clean.jsonl")
+
+        self.mesh_to_mesh_name = {}
+        self.mesh_name_to_mesh = defaultdict(lambda: set())
+
+        for name_file in [descriptor_file, supplemental_file]:
+            with open(name_file, "r", encoding="utf8") as f:
+                for line in f:
+                    mesh, name, alias_list, _ = json.loads(line)
+
+                    self.mesh_to_mesh_name[mesh] = [name] + alias_list
+
+                    self.mesh_name_to_mesh[name.lower()].add(mesh)
+                    for alias in alias_list:
+                        self.mesh_name_to_mesh[alias.lower()].add(mesh)
+        return
+
+    def load_hpo_data(self):
+        hpo_file = os.path.join(self.data_dir, "hpo", "hpo_name_term_mesh.jsonl")
+
+        self.hpo_to_mesh = defaultdict(lambda: set())
+        self.hpo_name_to_mesh = defaultdict(lambda: set())
+
+        with open(hpo_file, "r", encoding="utf8") as f:
+            for line in f:
+                hpo, name, alias_list, mesh_list = json.loads(line)
+
+                for mesh in mesh_list:
+                    self.hpo_to_mesh[hpo].add(mesh)
+                    self.hpo_name_to_mesh[name.lower()].add(mesh)
+                    for alias in alias_list:
+                        self.hpo_name_to_mesh[alias.lower()].add(mesh)
+        return
+
+    def load_literature_data(self):
+        literature_file = os.path.join(self.data_dir, "literature", "mesh_name.jsonl")
+
+        self.literature_name_to_mesh = defaultdict(lambda: set())
+
+        with open(literature_file, "r", encoding="utf8") as f:
+            for line in f:
+                mesh, name_list = json.loads(line)
+                for name in name_list:
+                    self.literature_name_to_mesh[name.lower()].add(mesh)
+        return
+
+    def load_data(self):
+        self.load_mesh_data()
+        self.load_hpo_data()
+        self.load_literature_data()
+        return
+
+    def get_mesh_name_by_mesh_id(self, mesh):
+        if mesh.startswith("MESH:"):
+            mesh = mesh[len("MESH:"):]
+        name_list = self.mesh_to_mesh_name.get(mesh, [])
+        return name_list
+
+    def get_mesh_id_by_all_source_name(self, name):
+        name = name.lower()
+        result_mesh_set = set()
+
+        dictionary_list = [
+            self.mesh_name_to_mesh,
+            self.hpo_name_to_mesh,
+            self.literature_name_to_mesh,
+        ]
+
+        for name_to_mesh_set in dictionary_list:
+            mesh_set = name_to_mesh_set.get(name, set())
+            for mesh in mesh_set:
+                result_mesh_set.add(mesh)
+
+        return result_mesh_set
+
+
 class MESHNode:
     def __init__(self, graph_data, index):
         self.index = index
@@ -956,8 +1049,6 @@ class MESHNode:
 class MESHGraph:
     def __init__(self, data_dir):
         self.data_dir = data_dir
-        self.mesh_to_name = {}
-        self.name_to_mesh = {}
         self.graph_data = []
         self.mesh_to_index = {}
 
@@ -966,28 +1057,8 @@ class MESHGraph:
         return
 
     def load_data(self):
-        descriptor_file = os.path.join(self.data_dir, "raw_json", "desc2023.jsonl")
-        supplemental_file = os.path.join(self.data_dir, "raw_json", "supp2023_clean.jsonl")
         graph_file = os.path.join(self.data_dir, "graph", "graph.jsonl")
 
-        # read name data
-        self.mesh_to_name = {}
-
-        for name_file in [descriptor_file, supplemental_file]:
-            with open(name_file, "r", encoding="utf8") as f:
-                for line in f:
-                    mesh, name, alias_list, _ = json.loads(line)
-
-                    self.mesh_to_name[mesh] = {
-                        "name": name,
-                        "term_list": alias_list,
-                    }
-
-                    self.name_to_mesh[name.lower()] = mesh
-                    for alias in alias_list:
-                        self.name_to_mesh[alias.lower()] = mesh
-
-        # read graph
         self.graph_data = []
         self.mesh_to_index = {}
 
@@ -997,12 +1068,6 @@ class MESHGraph:
                 self.mesh_to_index[datum[0]] = len(self.graph_data)
                 self.graph_data.append(datum)
         return
-
-    def get_name(self, mesh):
-        if mesh.startswith("MESH:"):
-            mesh = mesh[len("MESH:"):]
-        data = self.mesh_to_name.get(mesh, {"name": "", "term_list": []})
-        return data
 
     def add_and_get_node(self, index, label, subgraph_index_to_node):
         if index in subgraph_index_to_node:
@@ -1014,91 +1079,115 @@ class MESHGraph:
         return node
 
     def get_subgraph(
-            self, query_mesh,
+            self, query_mesh_list,
             max_super_level=3, max_sub_level=1, max_sub_nodes=20, max_sibling_nodes=20, max_supplemental_nodes=20,
     ):
         index_to_node = {}
         edge_set = set()
 
         # query
-        if query_mesh.startswith("MESH:"):
-            query_mesh = query_mesh[len("MESH:"):]
-        if query_mesh not in self.mesh_to_index:
+        clean_query_mesh_set = set()
+        for mesh in query_mesh_list:
+            if mesh.startswith("MESH:"):
+                mesh = mesh[len("MESH:"):]
+            if mesh in self.mesh_to_index:
+                clean_query_mesh_set.add(mesh)
+
+        if not clean_query_mesh_set:
             return {
                 "index_to_node": {},
                 "edge_list": [],
             }
 
-        query_index = self.mesh_to_index[query_mesh]
-        query_node = self.add_and_get_node(query_index, "query", index_to_node)
+        query_index_to_node = {}
+        for mesh in clean_query_mesh_set:
+            index = self.mesh_to_index[mesh]
+            node = self.add_and_get_node(index, "query", index_to_node)
+            query_index_to_node[index] = node
 
         # ancestor
-        this_level = [(query_index, query_node)]
+        this_level = query_index_to_node
         for _ in range(max_super_level):
-            next_level = []
-            for node_index, node in this_level:
+            next_level = {}
+            for node_index, node in this_level.items():
                 for parent_index in node.parent_list:
-                    parent_node = self.add_and_get_node(parent_index, "super-category", index_to_node)
                     edge_set.add((parent_index, node_index))
-                    next_level.append((parent_index, parent_node))
+                    if parent_index in next_level:
+                        continue
+                    parent_node = self.add_and_get_node(parent_index, "super-category", index_to_node)
+                    next_level[parent_index] = parent_node
             this_level = next_level
         del this_level
 
         # descendant
-        this_level = [(query_index, query_node)]
+        this_level = query_index_to_node
         sub_nodes = 0
         for _ in range(max_sub_level):
             if sub_nodes >= max_sub_nodes:
                 break
-            next_level = []
-            for node_index, node in this_level:
+            next_level = {}
+            for node_index, node in this_level.items():
                 if sub_nodes >= max_sub_nodes:
                     break
                 for child_index in node.child_list:
                     if sub_nodes >= max_sub_nodes:
                         break
-                    child_node = self.add_and_get_node(child_index, "sub-category", index_to_node)
                     edge_set.add((node_index, child_index))
-                    next_level.append((child_index, child_node))
+                    if child_index in next_level:
+                        continue
+                    child_node = self.add_and_get_node(child_index, "sub-category", index_to_node)
+                    next_level[child_index] = child_node
                     sub_nodes += 1
             this_level = next_level
         del this_level
 
         # sibling
         sibling_nodes = 0
-        for parent_index in query_node.parent_list:
+        parent_level = {}
+        sibling_level = {}
+        for query_index, query_node in query_index_to_node.items():
             if sibling_nodes >= max_sibling_nodes:
                 break
-            edge_set.add((parent_index, query_index))
-            parent_node = self.add_and_get_node(parent_index, "super-category", index_to_node)
-            for sibling_index in parent_node.child_list:
+            for parent_index in query_node.parent_list:
                 if sibling_nodes >= max_sibling_nodes:
                     break
-                edge_set.add((parent_index, sibling_index))
-                _sibling_node = self.add_and_get_node(sibling_index, "sibling", index_to_node)
-                sibling_nodes += 1
 
-        # supplemental
-        if query_node.is_supplemental:
+                edge_set.add((parent_index, query_index))
+                if parent_index in parent_level:
+                    continue
+                parent_node = self.add_and_get_node(parent_index, "super-category", index_to_node)
+                parent_level[parent_index] = parent_node
+
+                for sibling_index in parent_node.child_list:
+                    if sibling_nodes >= max_sibling_nodes:
+                        break
+
+                    edge_set.add((parent_index, sibling_index))
+                    if sibling_index in sibling_level:
+                        continue
+                    sibling_node = self.add_and_get_node(sibling_index, "sibling", index_to_node)
+                    sibling_level[sibling_index] = sibling_node
+                    sibling_nodes += 1
+
+        # descriptor to supplemental (for all nodes)
+        supplemental_nodes = 0
+        for node_index, node in index_to_node.items():
+            if supplemental_nodes >= max_supplemental_nodes:
+                break
+            for supplemental_index in node.supplemental_list:
+                if supplemental_nodes >= max_supplemental_nodes:
+                    break
+                _supplemental_node = self.add_and_get_node(supplemental_index, "supplemental", index_to_node)
+                edge_set.add((node_index, supplemental_index))
+                supplemental_nodes += 1
+
+        # supplemental to descriptor (for query only)
+        for query_index, query_node in query_index_to_node.items():
             for descriptor_index in query_node.descriptor_list:
                 _descriptor_node = self.add_and_get_node(descriptor_index, "descriptor", index_to_node)
                 edge_set.add((descriptor_index, query_index))
 
-        else:
-            supplemental_nodes = 0
-            node_index_list = list(index_to_node.keys())
-            for node_index in node_index_list:
-                if supplemental_nodes >= max_supplemental_nodes:
-                    break
-                node = index_to_node[node_index]
-                for supplemental_index in node.supplemental_list:
-                    if supplemental_nodes >= max_supplemental_nodes:
-                        break
-                    _supplemental_node = self.add_and_get_node(supplemental_index, "supplemental", index_to_node)
-                    edge_set.add((node_index, supplemental_index))
-                    supplemental_nodes += 1
-
-        # dictionary
+        # transform to JSON compatible dictionary
         data = {
             "index_to_node": {
                 index: node.get_dictionary()

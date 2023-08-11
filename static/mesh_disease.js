@@ -21,18 +21,18 @@ nodes = new vis.DataSet([
 ]);
 
 edges = new vis.DataSet([
-    {"from": -1, "to": -2, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
-    {"from": -1, "to": -3, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
-    {"from": -1, "to": -4, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
-    {"from": -5, "to": -1, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
-    {"from": -6, "to": -1, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
-    {"from": -7, "to": -5, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
-    {"from": -7, "to": -6, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
-    {"from": -5, "to": -8, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
-    {"from": -6, "to": -9, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
-    {"from": -1, "to": -10, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
-    {"from": -6, "to": -11, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
-    {"from": -8, "to": -12, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
+    {"from": -1, "to": -2, "length": 100, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
+    {"from": -1, "to": -3, "length": 100, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
+    {"from": -1, "to": -4, "length": 100, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
+    {"from": -5, "to": -1, "length": 100, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
+    {"from": -6, "to": -1, "length": 100, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
+    {"from": -7, "to": -5, "length": 100, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
+    {"from": -7, "to": -6, "length": 100, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
+    {"from": -5, "to": -8, "length": 100, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
+    {"from": -6, "to": -9, "length": 100, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
+    {"from": -1, "to": -10, "length": 100, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
+    {"from": -6, "to": -11, "length": 100, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
+    {"from": -8, "to": -12, "length": 100, "arrows": {"to": {"enabled": true, "type": "arrow"}}},
 ]);
 
 container = document.getElementById("div_graph");
@@ -43,14 +43,33 @@ data = {
 options = {};
 network = new vis.Network(container, data, options);
 
+function run_show_default_query(){
+    sl_query_type = document.getElementById("sl_query_type").value;
+
+    if (sl_query_type == "mesh") {
+        query = "MESH:D013964";
+    } else if (sl_query_type == "mesh_name") {
+        query = "Hearing Loss";
+    } else if (sl_query_type == "hpo") {
+        query = "HP_0000704";
+    } else if (sl_query_type == "hpo_name") {
+        query = "Gingival hyperplasia";
+    } else if (sl_query_type == "literature_name") {
+        query = "carcinoma of the thyroid";
+    } else if (sl_query_type == "all_name") {
+        query = "thyroid cancer";
+    }
+
+    input_query = document.getElementById("input_query");
+    input_query.value = query;
+}
 
 function run_query(){
     document.getElementById("div_status").innerHTML = "Loading...";
 
     request_data = {
         "query_type": document.getElementById("sl_query_type").value,
-        "query_id": document.getElementById("ta_query_id").value,
-        "query_term": document.getElementById("ta_query_term").value,
+        "query": document.getElementById("input_query").value,
         "super_level": document.getElementById("ta_super_level").value,
         "sub_level": document.getElementById("ta_sub_level").value,
         "sub_nodes": document.getElementById("ta_sub_nodes").value,
@@ -84,8 +103,7 @@ function run_query(){
 
 function get_json(){
     query_type = document.getElementById("sl_query_type").value;
-    query_id = document.getElementById("ta_query_id").value;
-    query_term = document.getElementById("ta_query_term").value;
+    query = document.getElementById("input_query").value;
     super_level = document.getElementById("ta_super_level").value;
     sub_level = document.getElementById("ta_sub_level").value;
     sub_nodes = document.getElementById("ta_sub_nodes").value;
@@ -93,8 +111,7 @@ function get_json(){
     supplemental_nodes = document.getElementById("ta_supplemental_nodes").value;
 
     query_type = encodeURIComponent(query_type)
-    query_id = encodeURIComponent(query_id)
-    query_term = encodeURIComponent(query_term)
+    query = encodeURIComponent(query)
     super_level = encodeURIComponent(super_level)
     sub_level = encodeURIComponent(sub_level)
     sub_nodes = encodeURIComponent(sub_nodes)
@@ -102,8 +119,7 @@ function get_json(){
     supplemental_nodes = encodeURIComponent(supplemental_nodes)
 
     url = `./query_mesh_disease?query_type=${query_type}`
-    url = `${url}&query_id=${query_id}`
-    url = `${url}&query_term=${query_term}`
+    url = `${url}&query=${query}`
     url = `${url}&super_level=${super_level}`
     url = `${url}&sub_level=${sub_level}`
     url = `${url}&sub_nodes=${sub_nodes}`
