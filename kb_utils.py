@@ -2,6 +2,7 @@ import os
 import csv
 import sys
 import json
+import math
 import heapq
 import difflib
 import logging
@@ -916,6 +917,92 @@ class GVDScore:
         else:
             assert False
         return value
+
+
+class DiseaseToGene:
+    def __init__(self, pubmedkb_gvd_score=None, db_gvd_score=None, ncbi_gene=None):
+        self.groups = 3
+        self.group_to_score_range = [(1, 100), (101, 125), (126, 150)]
+        self.pubmedkb_gvd_score = pubmedkb_gvd_score
+        self.db_gvd_score = db_gvd_score
+        self.ncbi_gene = ncbi_gene
+        return
+
+    def get_pubmedkb_score(self, mesh):
+        gene_ann_score = self.pubmedkb_gvd_score.query_data("d2g", "", "", mesh)
+        gene_to_score = {
+            gene: math.log(1 + ann_to_score["sort_score"])
+            for gene, ann_to_score in gene_ann_score.items()
+        }
+        return gene_to_score
+
+    def get_db_score(self, mesh):
+        gene_ann_score = self.db_gvd_score.query_data("d2g", "", "", mesh)
+        gene_to_score = {
+            gene: ann_to_score["clinvar"] + ann_to_score["panelapp"]
+            for gene, ann_to_score in gene_ann_score.items()
+        }
+        return gene_to_score
+
+    def get_score(self, mesh):
+        # get group (db score) -> gene -> raw score (log pubmedkb score)
+        group_gene_raw_score = {i: {} for i in range(self.groups)}
+
+        gene_to_pubmedkb_score = self.get_pubmedkb_score(mesh)
+        gene_to_db_group = self.get_db_score(mesh)  # db group is db score and in {1, 2}
+
+        db_gene_set = set()
+        for gene, db_group in gene_to_db_group.items():
+            pubmedkb_score = gene_to_pubmedkb_score.get(gene, 0)
+            group_gene_raw_score[db_group][gene] = pubmedkb_score
+            db_gene_set.add(gene)
+
+        for gene, pubmedkb_score in gene_to_pubmedkb_score.items():
+            if gene in db_gene_set:
+                continue
+            group_gene_raw_score[0][gene] = pubmedkb_score
+
+        # final score is the normalized scores from each group
+        gene_to_score = {}
+
+        for group, gene_to_raw_score in group_gene_raw_score.items():
+            genes = len(gene_to_raw_score)
+            logger.info(f"mesh={mesh} group={group} genes={genes:,}")
+            if not gene_to_raw_score:
+                continue
+
+            max_raw_score = max(gene_to_raw_score.values())
+            score_min, score_max = self.group_to_score_range[group]
+            score_range = score_max - score_min
+
+            for gene, raw_score in gene_to_raw_score.items():
+                score = score_min + score_range * raw_score / max_raw_score
+                gene_to_score[gene] = score
+
+        return gene_to_score
+
+    def query(self, mesh_list):
+        gene_to_score = defaultdict(lambda: 0)
+        prefix = "MESH:"
+
+        # each gene's score is the sum of its scores for each mesh
+        for mesh in mesh_list:
+            if not mesh.startswith(prefix):
+                mesh = prefix + mesh
+            mesh_gene_to_score = self.get_score(mesh)
+
+            for gene, score in mesh_gene_to_score.items():
+                gene_to_score[gene] += score
+
+        # sort and add gene name
+        gene_name_score_list = []
+        gene_to_score = sorted(gene_to_score.items(), key=lambda gs: -gs[1])
+
+        for gene, score in gene_to_score:
+            gene_name = self.ncbi_gene.id_to_name.get(gene, "-")
+            gene_name_score_list.append((gene, gene_name, score))
+
+        return gene_name_score_list
 
 
 class MESHNameKB:

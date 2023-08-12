@@ -10,7 +10,8 @@ from collections import defaultdict
 
 from flask import Flask, render_template, request
 
-from kb_utils import query_variant, NEN, V2G, NCBIGene, KB, PaperKB, GeVarToGLOF, Meta, GVDScore
+from kb_utils import query_variant, NEN, V2G, NCBIGene, KB, PaperKB, GeVarToGLOF, Meta
+from kb_utils import GVDScore, DiseaseToGene
 from kb_utils import MESHNameKB, MESHGraph
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from summary_utils import Summary
@@ -46,6 +47,7 @@ paper_glof = PaperKB(None)
 entity_glof = GeVarToGLOF(None)
 gvd_score = GVDScore(None)
 gd_db = GVDScore(None)
+disease_to_gene = DiseaseToGene()
 mesh_name_kb = MESHNameKB(None)
 mesh_graph = MESHGraph(None)
 kb_type = None
@@ -120,6 +122,11 @@ def serve_gvd_stats():
 @app.route("/gd_db")
 def serve_gd_db():
     return render_template("gd_db.html")
+
+
+@app.route("/disease_to_gene")
+def serve_disease_to_gene():
+    return render_template("disease_to_gene.html")
 
 
 @app.route("/mesh_disease")
@@ -1598,9 +1605,11 @@ def run_gvd_stats():
         return _gene_cell, _variant_cell
 
     def get_table_cell_disease_id(_disease_id):
-        _disease_name = nen.get_most_frequent_name_by_id("Disease", _disease_id)
+        disease_name_list = mesh_name_kb.get_mesh_name_by_mesh_id(_disease_id)
 
-        if not _disease_name:
+        if disease_name_list:
+            _disease_name = disease_name_list[0]
+        else:
             _disease_name = "-"
 
         _disease_id = _disease_id[len("MESH:"):]
@@ -1749,9 +1758,11 @@ def run_gd_db():
         return cell
 
     def get_table_cell_disease_id(_disease_id):
-        _disease_name = nen.get_most_frequent_name_by_id("Disease", _disease_id)
+        disease_name_list = mesh_name_kb.get_mesh_name_by_mesh_id(_disease_id)
 
-        if not _disease_name:
+        if disease_name_list:
+            _disease_name = disease_name_list[0]
+        else:
             _disease_name = "-"
 
         _disease_id = _disease_id[len("MESH:"):]
@@ -1840,6 +1851,96 @@ def query_gd_db():
         "url_argument": arg,
         "result": gvd_score_data,
     }
+    return json.dumps(response)
+
+
+@app.route("/run_disease_to_gene", methods=["POST"])
+def run_disease_to_gene():
+    # url argument
+    data = json.loads(request.data)
+    query = json.loads(data["query"])
+    logger.info(f"query={query}")
+
+    # mesh
+    query_mesh_list = query.get("mesh_list", [])
+    query_name_list = query.get("disease_list", [])
+
+    mesh_set = set(query_mesh_list)
+    prefix = "MESH:"
+
+    for name in query_name_list:
+        name_mesh_set = mesh_name_kb.get_mesh_id_by_all_source_name(name)
+        clean_name_mesh_set = set()
+
+        for mesh in name_mesh_set:
+            if not mesh.startswith(prefix):
+                mesh = prefix + mesh
+            clean_name_mesh_set.add(mesh)
+
+        logger.info(f"[{name}] mesh_set={clean_name_mesh_set}")
+        mesh_set |= clean_name_mesh_set
+
+    mesh_list = sorted(mesh_set)
+    del mesh_set
+    logger.info(f"combined mesh_list={mesh_list}")
+
+    # gene_to_score
+    gene_name_score_list = disease_to_gene.query(mesh_list)
+
+    table_html = '<table style="width: 400px;"><tr><th>Gene</th><th>Score</th></tr>'
+    for gene, gene_name, score in gene_name_score_list:
+        gene_html = f'<a href="https://www.ncbi.nlm.nih.gov/gene/{gene}">[{html.escape(gene)}]</a> {html.escape(gene_name)}'
+        score_html = html.escape(f"{score:.1f}")
+        table_html += f"<tr><td>{gene_html}</td><td>{score_html}</td></tr>"
+    table_html += "</table>"
+
+    response = {"result": table_html}
+    return json.dumps(response)
+
+
+@app.route("/query_disease_to_gene")
+def query_disease_to_gene():
+    response = {}
+
+    # url argument
+    query = request.args.get("query")
+    query = json.loads(query)
+    response["url_argument"] = {
+        "query": query,
+    }
+    logger.info(f"query={query}")
+
+    # mesh
+    query_mesh_list = query.get("mesh_list", [])
+    query_name_list = query.get("disease_list", [])
+
+    mesh_set = set(query_mesh_list)
+    prefix = "MESH:"
+
+    for name in query_name_list:
+        name_mesh_set = mesh_name_kb.get_mesh_id_by_all_source_name(name)
+        clean_name_mesh_set = set()
+
+        for mesh in name_mesh_set:
+            if not mesh.startswith(prefix):
+                mesh = prefix + mesh
+            clean_name_mesh_set.add(mesh)
+
+        logger.info(f"[{name}] mesh_set={clean_name_mesh_set}")
+        mesh_set |= clean_name_mesh_set
+
+    mesh_list = sorted(mesh_set)
+    del mesh_set
+    logger.info(f"combined mesh_list={mesh_list}")
+
+    # gene_to_score
+    gene_name_score_list = disease_to_gene.query(mesh_list)
+    gene_name_score_list = [
+        (gene, gene_name, f"{score:.1f}")
+        for gene, gene_name, score in gene_name_score_list
+    ]
+    response["gene_name_score_list"] = gene_name_score_list
+
     return json.dumps(response)
 
 
@@ -2190,6 +2291,10 @@ def main():
     if arg.gd_db_dir:
         global gd_db
         gd_db = GVDScore(arg.gd_db_dir, type_list=("gdas", "dgas"))
+
+    if arg.gvd_score_dir and arg.gd_db_dir:
+        global disease_to_gene
+        disease_to_gene = DiseaseToGene(gvd_score, gd_db, ncbi_gene)
 
     if arg.mesh_disease_dir:
         global mesh_name_kb, mesh_graph
