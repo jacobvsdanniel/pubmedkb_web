@@ -2041,7 +2041,7 @@ def run_mesh_disease():
         mesh_html = f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={mesh[len(prefix):]}">{html.escape(mesh)}</a>'
         name_html = html.escape(f"{name_list[0]}")
         alias_html = [html.escape(alias) for alias in name_list[1:]]
-        alias_html = "&nbsp;&nbsp;&nbsp;&nbsp;".join(alias_html)
+        alias_html = "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;".join(alias_html)
 
         name_table_html += \
             f"<tr>" \
@@ -2067,7 +2067,7 @@ def run_mesh_disease():
 
     # vis node
     node_list = []
-    label_to_color = {
+    label_to_node_color = {
         "query": "#d5abff",  # 270°, 33%, 100% violet
         "sub-category": "#abffff",  # 180°, 33%, 100% cyan
         "super-category": "#d5ffab",  # 90°, 33%, 100% yellow-green
@@ -2084,17 +2084,37 @@ def run_mesh_disease():
         node = {
             "id": index,
             "label": f"{mesh}\n{display_name}",
-            "color": label_to_color[label],
+            "color": label_to_node_color[label],
         }
         node_list.append(node)
 
     # vis edge
     edge_list = []
+    label_to_length = {
+        "query": 300,
+        "sub-category": 120,
+        "super-category": 300,
+        "sibling": 120,
+        "supplemental": 120,
+        "descriptor": 120,
+    }
+    label_to_edge_color = {
+        "query": "#8945cc",  # 270°, 66%, 80% violet
+        "sub-category": "#45cccc",  # 180°, 66%, 80% cyan
+        "super-category": "#89cc45",  # 90°, 66%, 80% yellow-green
+        "sibling": "#cccc45",  # 60°, 66%, 80% yellow
+        "supplemental": "#cc8945",  # 30°, 66%, 80% orange
+        "descriptor": "#cc4545",  # 0°, 66%, 80% red
+    }
+
     for from_index, to_index in subgraph["edge_list"]:
+        to_label = subgraph["index_to_node"][to_index]["label"]
+
         edge = {
             "from": from_index,
             "to": to_index,
-            "length": 150,
+            "length": label_to_length[to_label],
+            "color": label_to_edge_color[to_label],
             "arrows": {"to": {"enabled": True, "type": "arrow"}},
         }
         edge_list.append(edge)
