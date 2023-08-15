@@ -1952,9 +1952,8 @@ def run_mesh_disease():
     query = data["query"]
     super_level = data["super_level"]
     sub_level = data["sub_level"]
-    sub_nodes = data["sub_nodes"]
-    sibling_nodes = data["sibling_nodes"]
-    supplemental_nodes = data["supplemental_nodes"]
+    sibling_level = data["sibling_level"]
+    supplemental_level = data["supplemental_level"]
 
     query = query.strip()
 
@@ -1969,28 +1968,22 @@ def run_mesh_disease():
         sub_level = 1
 
     try:
-        sub_nodes = int(sub_nodes)
+        sibling_level = int(sibling_level)
     except ValueError:
-        sub_nodes = 20
+        sibling_level = 1
 
     try:
-        sibling_nodes = int(sibling_nodes)
+        supplemental_level = int(supplemental_level)
     except ValueError:
-        sibling_nodes = 0
-
-    try:
-        supplemental_nodes = int(supplemental_nodes)
-    except ValueError:
-        supplemental_nodes = 0
+        supplemental_level = 1
 
     logger.info(
         f"query_type={query_type}"
         f" query={query}"
         f" super_level={super_level}"
         f" sub_level={sub_level}"
-        f" sub_nodes={sub_nodes}"
-        f" sibling_nodes={sibling_nodes}"
-        f" supplemental_nodes={supplemental_nodes}"
+        f" sibling_level={sibling_level}"
+        f" supplemental_level={supplemental_level}"
     )
 
     # mesh
@@ -2063,11 +2056,10 @@ def run_mesh_disease():
     # subgraph
     subgraph = mesh_graph.get_subgraph(
         mesh_list,
-        super_level,
-        sub_level,
-        sub_nodes,
-        sibling_nodes,
-        supplemental_nodes,
+        super_level=super_level,
+        sub_level=sub_level,
+        sibling_level=sibling_level,
+        supplemental_level=supplemental_level,
     )
     nodes = len(subgraph["index_to_node"])
     edges = len(subgraph["edge_list"])
@@ -2122,9 +2114,8 @@ def query_mesh_disease():
     query = request.args.get("query")
     super_level = request.args.get("super_level")
     sub_level = request.args.get("sub_level")
-    sub_nodes = request.args.get("sub_nodes")
-    sibling_nodes = request.args.get("sibling_nodes")
-    supplemental_nodes = request.args.get("supplemental_nodes")
+    sibling_level = request.args.get("sibling_level")
+    supplemental_level = request.args.get("supplemental_level")
 
     query = query.strip()
 
@@ -2139,28 +2130,22 @@ def query_mesh_disease():
         sub_level = 1
 
     try:
-        sub_nodes = int(sub_nodes)
+        sibling_level = int(sibling_level)
     except ValueError:
-        sub_nodes = 20
+        sibling_level = 1
 
     try:
-        sibling_nodes = int(sibling_nodes)
+        supplemental_level = int(supplemental_level)
     except ValueError:
-        sibling_nodes = 20
-
-    try:
-        supplemental_nodes = int(supplemental_nodes)
-    except ValueError:
-        supplemental_nodes = 0
+        supplemental_level = 1
 
     logger.info(
         f"query_type={query_type}"
         f" query={query}"
         f" super_level={super_level}"
         f" sub_level={sub_level}"
-        f" sub_nodes={sub_nodes}"
-        f" sibling_nodes={sibling_nodes}"
-        f" supplemental_nodes={supplemental_nodes}"
+        f" sibling_level={sibling_level}"
+        f" supplemental_level={supplemental_level}"
     )
 
     # mesh
@@ -2210,11 +2195,10 @@ def query_mesh_disease():
     # subgraph
     subgraph = mesh_graph.get_subgraph(
         mesh_list,
-        super_level,
-        sub_level,
-        sub_nodes,
-        sibling_nodes,
-        supplemental_nodes,
+        super_level=super_level,
+        sub_level=sub_level,
+        sibling_level=sibling_level,
+        supplemental_level=supplemental_level,
     )
     nodes = len(subgraph["index_to_node"])
     edges = len(subgraph["edge_list"])

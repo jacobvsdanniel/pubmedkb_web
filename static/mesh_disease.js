@@ -44,19 +44,19 @@ options = {};
 network = new vis.Network(container, data, options);
 
 function run_show_default_query(){
-    sl_query_type = document.getElementById("sl_query_type").value;
+    select_query_type = document.getElementById("select_query_type").value;
 
-    if (sl_query_type == "mesh") {
+    if (select_query_type == "mesh") {
         query = "MESH:D013964";
-    } else if (sl_query_type == "mesh_name") {
+    } else if (select_query_type == "mesh_name") {
         query = "Hearing Loss";
-    } else if (sl_query_type == "hpo") {
+    } else if (select_query_type == "hpo") {
         query = "HP_0000704";
-    } else if (sl_query_type == "hpo_name") {
+    } else if (select_query_type == "hpo_name") {
         query = "Gingival hyperplasia";
-    } else if (sl_query_type == "literature_name") {
+    } else if (select_query_type == "literature_name") {
         query = "carcinoma of the thyroid";
-    } else if (sl_query_type == "all_name") {
+    } else if (select_query_type == "all_name") {
         query = "thyroid cancer";
     }
 
@@ -68,13 +68,12 @@ function run_query(){
     document.getElementById("div_status").innerHTML = "Loading...";
 
     request_data = {
-        "query_type": document.getElementById("sl_query_type").value,
+        "query_type": document.getElementById("select_query_type").value,
         "query": document.getElementById("input_query").value,
-        "super_level": document.getElementById("ta_super_level").value,
-        "sub_level": document.getElementById("ta_sub_level").value,
-        "sub_nodes": document.getElementById("ta_sub_nodes").value,
-        "sibling_nodes": document.getElementById("ta_sibling_nodes").value,
-        "supplemental_nodes": document.getElementById("ta_supplemental_nodes").value,
+        "super_level": document.getElementById("input_super_level").value,
+        "sub_level": document.getElementById("input_sub_level").value,
+        "sibling_level": document.getElementById("select_sibling_level").value,
+        "supplemental_level": document.getElementById("select_supplemental_level").value,
     };
 
     fetch("./run_mesh_disease", {method: "post", body: JSON.stringify(request_data)})
@@ -102,29 +101,26 @@ function run_query(){
 }
 
 function get_json(){
-    query_type = document.getElementById("sl_query_type").value;
+    query_type = document.getElementById("select_query_type").value;
     query = document.getElementById("input_query").value;
-    super_level = document.getElementById("ta_super_level").value;
-    sub_level = document.getElementById("ta_sub_level").value;
-    sub_nodes = document.getElementById("ta_sub_nodes").value;
-    sibling_nodes = document.getElementById("ta_sibling_nodes").value;
-    supplemental_nodes = document.getElementById("ta_supplemental_nodes").value;
+    super_level = document.getElementById("input_super_level").value;
+    sub_level = document.getElementById("input_sub_level").value;
+    sibling_level = document.getElementById("select_sibling_level").value;
+    supplemental_level = document.getElementById("select_supplemental_level").value;
 
     query_type = encodeURIComponent(query_type)
     query = encodeURIComponent(query)
     super_level = encodeURIComponent(super_level)
     sub_level = encodeURIComponent(sub_level)
-    sub_nodes = encodeURIComponent(sub_nodes)
-    sibling_nodes = encodeURIComponent(sibling_nodes)
-    supplemental_nodes = encodeURIComponent(supplemental_nodes)
+    sibling_level = encodeURIComponent(sibling_level)
+    supplemental_level = encodeURIComponent(supplemental_level)
 
     url = `./query_mesh_disease?query_type=${query_type}`
     url = `${url}&query=${query}`
     url = `${url}&super_level=${super_level}`
     url = `${url}&sub_level=${sub_level}`
-    url = `${url}&sub_nodes=${sub_nodes}`
-    url = `${url}&sibling_nodes=${sibling_nodes}`
-    url = `${url}&supplemental_nodes=${supplemental_nodes}`
+    url = `${url}&sibling_level=${sibling_level}`
+    url = `${url}&supplemental_level=${supplemental_level}`
 
     window.open(url, "_blank");
 }

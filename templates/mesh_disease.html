@@ -41,25 +41,33 @@
 <h1 style="font-family: Helvetica, sans-serif;">MeSH Disease</h1>
 <br />
 
-<label>Max super-category (ancestor) level:</label>
-<textarea spellcheck="false" id="ta_super_level" style="font-size: 14px; width: 50px; height: 18px;">3</textarea>
+<div style="font-size: 16px; height: 40px; font-family: Arial, Helvetica, sans-serif;">
+<label>Levels of super-category (ancestor):</label>&nbsp;
+<input spellcheck="false" id="input_super_level" value="3" style="width: 30px; height: 28px; font-size: 16px;">
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-<label>Max sub-category (descendant) level:</label>
-<textarea spellcheck="false" id="ta_sub_level" style="font-size: 14px; width: 50px; height: 18px;">1</textarea>
+<label>Levels of sub-category (descendant):</label>&nbsp;
+<input spellcheck="false" id="input_sub_level" value="1" style="width: 30px; height: 28px; font-size: 16px;">
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-<label>Max sub-category (descendant) nodes:</label>
-<textarea spellcheck="false" id="ta_sub_nodes" style="font-size: 14px; width: 50px; height: 18px;">20</textarea>
+<label>Levels of sibling:</label>&nbsp;
+<select id="select_sibling_level" style="height: 32px; font-size: 16px;">
+    <option value="0">0 (none)</option>
+    <option value="1" selected="selected">1 (same 1-level super-category)</option>
+</select>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-<label>Max sibling nodes:</label>
-<textarea spellcheck="false" id="ta_sibling_nodes" style="font-size: 14px; width: 50px; height: 18px;">0</textarea>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-<label>Max supplemental nodes:</label>
-<textarea spellcheck="false" id="ta_supplemental_nodes" style="font-size: 14px; width: 50px; height: 18px;">0</textarea>
-<br /><br /><br />
+<label>Show supplemental:</label>
+<select id="select_supplemental_level" style="height: 32px; font-size: 16px;">
+    <option value="0">0 (none)</option>
+    <option value="1" selected="selected">1 (+query)</option>
+    <option value="2">2 (+descendant)</option>
+    <option value="3">3 (+ancestor)</option>
+    <option value="4">4 (+sibling)</option>
+</select>
+</div>
+<br /><br />
 
 <label style="font-size: 20px; font-family: Arial, Helvetica, sans-serif;">Query by</label>
 &nbsp;
-<select id="sl_query_type" onchange="run_show_default_query()" style="font-size: 18px; height: 32px; font-family: Arial, Helvetica, sans-serif;">
+<select id="select_query_type" onchange="run_show_default_query()" style="font-size: 18px; height: 32px; font-family: Arial, Helvetica, sans-serif;">
     <option value="mesh">MeSH ID</option>
     <option value="mesh_name">MeSH Term</option>
     <option value="hpo">HPO ID</option>
@@ -81,7 +89,8 @@
 
 <div style="font-size: 30px; font-family: Arial, Helvetica, sans-serif;">Result<br /><br /></div>
 <div id="div_result" style="width: 1300px; font-size: 16px; line-height: 150%; font-family: Arial, Helvetica, sans-serif;"></div>
-<div id="div_graph" style="width: 1300px; height: 600px; border: 2px solid lightgray;"></div>
+<div id="div_graph" style="width: 1600px; height: 800px; border: 2px solid lightgray;"></div>
+<br /><br /><br /><br /><br />
 
 <script type="text/javascript" src="static/mesh_disease.js"></script>
 
