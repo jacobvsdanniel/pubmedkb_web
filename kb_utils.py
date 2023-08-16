@@ -920,12 +920,10 @@ class GVDScore:
 
 
 class DiseaseToGene:
-    def __init__(self, pubmedkb_gvd_score=None, db_gvd_score=None, ncbi_gene=None):
-        self.groups = 3
+    def __init__(self, pubmedkb_gvd_score=None, db_gvd_score=None):
         self.group_to_score_range = [(1, 100), (101, 125), (126, 150)]
         self.pubmedkb_gvd_score = pubmedkb_gvd_score
         self.db_gvd_score = db_gvd_score
-        self.ncbi_gene = ncbi_gene
         return
 
     def get_pubmedkb_score(self, mesh):
@@ -938,71 +936,74 @@ class DiseaseToGene:
 
     def get_db_score(self, mesh):
         gene_ann_score = self.db_gvd_score.query_data("d2g", "", "", mesh)
-        gene_to_score = {
-            gene: ann_to_score["clinvar"] + ann_to_score["panelapp"]
-            for gene, ann_to_score in gene_ann_score.items()
-        }
-        return gene_to_score
+        return gene_ann_score
 
-    def get_score(self, mesh):
-        # get group (db score) -> gene -> raw score (log pubmedkb score)
-        group_gene_raw_score = {i: {} for i in range(self.groups)}
+    def get_score(self, mesh_list):
+        # normalize mesh ID format
+        clean_mesh_list = []
+        prefix = "MESH:"
+        for mesh in mesh_list:
+            if mesh.startswith(prefix):
+                clean_mesh_list.append(mesh)
+            else:
+                clean_mesh_list.append(prefix + mesh)
+        mesh_list = clean_mesh_list
 
-        gene_to_pubmedkb_score = self.get_pubmedkb_score(mesh)
-        gene_to_db_group = self.get_db_score(mesh)  # db group is db score and in {1, 2}
+        # collect pubmedkb score and db score for all mesh
+        mesh_to_gene_set = {}
+        all_gene_set = set()
+        gene_db_score = defaultdict(lambda: defaultdict(lambda: 0))
+        gene_to_pubmedkb_score = defaultdict(lambda: 0)
 
-        db_gene_set = set()
-        for gene, db_group in gene_to_db_group.items():
-            pubmedkb_score = gene_to_pubmedkb_score.get(gene, 0)
-            group_gene_raw_score[db_group][gene] = pubmedkb_score
-            db_gene_set.add(gene)
+        for mesh in mesh_list:
+            gene_set = set()
+            sub_gene_db_score = self.get_db_score(mesh)
+            sub_gene_to_pubmedkb_score = self.get_pubmedkb_score(mesh)
 
-        for gene, pubmedkb_score in gene_to_pubmedkb_score.items():
-            if gene in db_gene_set:
-                continue
-            group_gene_raw_score[0][gene] = pubmedkb_score
+            for gene, db_to_score in sub_gene_db_score.items():
+                gene_set.add(gene)
+                for db, score in db_to_score.items():
+                    gene_db_score[gene][db] += score
 
-        # final score is the normalized scores from each group
+            for gene, score in sub_gene_to_pubmedkb_score.items():
+                gene_set.add(gene)
+                gene_to_pubmedkb_score[gene] += score
+
+            mesh_to_gene_set[mesh] = gene_set
+            all_gene_set |= gene_set
+
+        # get gene to final score
         gene_to_score = {}
 
-        for group, gene_to_raw_score in group_gene_raw_score.items():
-            genes = len(gene_to_raw_score)
-            logger.info(f"mesh={mesh} group={group} genes={genes:,}")
-            if not gene_to_raw_score:
-                continue
+        if gene_to_pubmedkb_score:
+            max_pubmedkb_score = max(gene_to_pubmedkb_score.values())
+        else:
+            max_pubmedkb_score = 1
 
-            max_raw_score = max(gene_to_raw_score.values())
+        for gene in all_gene_set:
+            db_to_score = gene_db_score.get(gene, {"clinvar": 0, "panelapp": 0})
+
+            group = 0
+            if db_to_score["clinvar"] > 0:
+                group += 1
+            if db_to_score["panelapp"] > 0:
+                group += 1
             score_min, score_max = self.group_to_score_range[group]
             score_range = score_max - score_min
 
-            for gene, raw_score in gene_to_raw_score.items():
-                score = score_min + score_range * raw_score / max_raw_score
-                gene_to_score[gene] = score
+            pubmedkb_score = gene_to_pubmedkb_score.get(gene, 0)
+            if pubmedkb_score > 0:
+                score = score_min + score_range * pubmedkb_score / max_pubmedkb_score
+            else:
+                score = score_min
 
-        return gene_to_score
+            gene_to_score[gene] = score
 
-    def query(self, mesh_list):
-        gene_to_score = defaultdict(lambda: 0)
-        prefix = "MESH:"
-
-        # each gene's score is the sum of its scores for each mesh
-        for mesh in mesh_list:
-            if not mesh.startswith(prefix):
-                mesh = prefix + mesh
-            mesh_gene_to_score = self.get_score(mesh)
-
-            for gene, score in mesh_gene_to_score.items():
-                gene_to_score[gene] += score
-
-        # sort and add gene name
+        # sort score
         gene_name_score_list = []
         gene_to_score = sorted(gene_to_score.items(), key=lambda gs: -gs[1])
 
-        for gene, score in gene_to_score:
-            gene_name = self.ncbi_gene.id_to_name.get(gene, "-")
-            gene_name_score_list.append((gene, gene_name, score))
-
-        return gene_name_score_list
+        return gene_to_score, mesh_to_gene_set
 
 
 class MESHNameKB:

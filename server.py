@@ -1884,14 +1884,40 @@ def run_disease_to_gene():
     del mesh_set
     logger.info(f"combined mesh_list={mesh_list}")
 
-    # gene_to_score
-    gene_name_score_list = disease_to_gene.query(mesh_list)
+    # show gene->score and gene->mesh
+    gene_score_list, mesh_to_gene_set = disease_to_gene.get_score(mesh_list)
 
-    table_html = '<table style="width: 400px;"><tr><th>Gene</th><th>Score</th></tr>'
-    for gene, gene_name, score in gene_name_score_list:
+    gene_to_mesh = defaultdict(lambda: [])
+    for mesh, gene_set in mesh_to_gene_set.items():
+        mesh_name_list = mesh_name_kb.get_mesh_name_by_mesh_id(mesh)
+        if mesh_name_list:
+            mesh_name = mesh_name_list[0]
+        else:
+            mesh_name = "-"
+
+        for gene in gene_set:
+            gene_to_mesh[gene].append((mesh, mesh_name))
+
+    width = 800
+    table_html = f'<table style="width: {width}px;"><tr><th>Gene</th><th>Score</th><th>Disease</th></tr>'
+    for gene, score in gene_score_list:
+        gene_name = ncbi_gene.id_to_name.get(gene, "-")
         gene_html = f'<a href="https://www.ncbi.nlm.nih.gov/gene/{gene}">[{html.escape(gene)}]</a> {html.escape(gene_name)}'
+
         score_html = html.escape(f"{score:.1f}")
-        table_html += f"<tr><td>{gene_html}</td><td>{score_html}</td></tr>"
+
+        mesh_name_list = gene_to_mesh[gene]
+        mesh_html_list = []
+        for mesh, mesh_name in mesh_name_list:
+            mesh = mesh[len(prefix):]
+            mesh_html = \
+                f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={mesh}">[{html.escape(mesh)}]</a>' \
+                f'&nbsp;{html.escape(mesh_name)}'
+            mesh_html_list.append(mesh_html)
+
+        mesh_html = "<br />".join(mesh_html_list)
+
+        table_html += f"<tr><td>{gene_html}</td><td>{score_html}</td><td>{mesh_html}</td></tr>"
     table_html += "</table>"
 
     response = {"result": table_html}
@@ -1933,14 +1959,34 @@ def query_disease_to_gene():
     del mesh_set
     logger.info(f"combined mesh_list={mesh_list}")
 
-    # gene_to_score
-    gene_name_score_list = disease_to_gene.query(mesh_list)
-    gene_name_score_list = [
-        (gene, gene_name, f"{score:.1f}")
-        for gene, gene_name, score in gene_name_score_list
-    ]
-    response["gene_name_score_list"] = gene_name_score_list
+    # get (gene, name)->score and (mesh, name)->[(gene,name), ...]
+    gene_score_list, mesh_to_gene_set = disease_to_gene.get_score(mesh_list)
 
+    gene_to_name = {}
+    gene_name_score_list = []
+    for gene, score in gene_score_list:
+        name = ncbi_gene.id_to_name.get(gene, "-")
+        gene_to_name[gene] = name
+        gene_name_score_list.append(((gene, name), f"{score:.1f}"))
+    gene_score_list = gene_name_score_list
+
+    mesh_gene_list = []
+    for mesh, gene_set in mesh_to_gene_set.items():
+        mesh_name_list = mesh_name_kb.get_mesh_name_by_mesh_id(mesh)
+        if mesh_name_list:
+            mesh_name = mesh_name_list[0]
+        else:
+            mesh_name = "-"
+
+        gene_list = [
+            (gene, gene_to_name[gene])
+            for gene in gene_set
+        ]
+
+        mesh_gene_list.append(((mesh, mesh_name), gene_list))
+
+    response["gene_score_list"] = gene_score_list
+    response["mesh_gene_list"] = mesh_gene_list
     return json.dumps(response)
 
 
@@ -2256,38 +2302,38 @@ def main():
         if value is not None:
             logger.info(f"[{key}] {value}")
 
-    if arg.nen_dir:
-        global nen
-        nen = NEN(arg.nen_dir)
-
-    if arg.meta_dir:
-        global kb_meta
-        kb_meta = Meta(arg.meta_dir)
-
-    if arg.paper_dir:
-        global paper_nen
-        paper_nen = PaperKB(arg.paper_dir)
-
-    if arg.gene_dir and arg.variant_dir:
-        global v2g
-        v2g = V2G(arg.variant_dir, arg.gene_dir)
-
+    # if arg.nen_dir:
+    #     global nen
+    #     nen = NEN(arg.nen_dir)
+    #
+    # if arg.meta_dir:
+    #     global kb_meta
+    #     kb_meta = Meta(arg.meta_dir)
+    #
+    # if arg.paper_dir:
+    #     global paper_nen
+    #     paper_nen = PaperKB(arg.paper_dir)
+    #
+    # if arg.gene_dir and arg.variant_dir:
+    #     global v2g
+    #     v2g = V2G(arg.variant_dir, arg.gene_dir)
+    #
     if arg.gene_dir:
         global ncbi_gene
         ncbi_gene = NCBIGene(arg.gene_dir)
-
-    if arg.glof_dir:
-        global paper_glof, entity_glof
-        paper_glof = PaperKB(arg.glof_dir)
-        entity_glof = GeVarToGLOF(arg.glof_dir)
-
-    if arg.kb_dir and arg.kb_type:
-        global kb, kb_type
-        kb = KB(arg.kb_dir)
-        kb.load_data()
-        kb.load_index()
-        kb_type = arg.kb_type
-
+    #
+    # if arg.glof_dir:
+    #     global paper_glof, entity_glof
+    #     paper_glof = PaperKB(arg.glof_dir)
+    #     entity_glof = GeVarToGLOF(arg.glof_dir)
+    #
+    # if arg.kb_dir and arg.kb_type:
+    #     global kb, kb_type
+    #     kb = KB(arg.kb_dir)
+    #     kb.load_data()
+    #     kb.load_index()
+    #     kb_type = arg.kb_type
+    #
     if arg.gvd_score_dir:
         global gvd_score
         gvd_score = GVDScore(arg.gvd_score_dir)
@@ -2296,9 +2342,9 @@ def main():
         global gd_db
         gd_db = GVDScore(arg.gd_db_dir, type_list=("gdas", "dgas"))
 
-    if arg.gvd_score_dir and arg.gd_db_dir:
+    if arg.gvd_score_dir and arg.gd_db_dir and arg.gene_dir:
         global disease_to_gene
-        disease_to_gene = DiseaseToGene(gvd_score, gd_db, ncbi_gene)
+        disease_to_gene = DiseaseToGene(gvd_score, gd_db)
 
     if arg.mesh_disease_dir:
         global mesh_name_kb, mesh_graph
