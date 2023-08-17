@@ -1854,6 +1854,50 @@ def query_gd_db():
     return json.dumps(response)
 
 
+def get_term_mesh_mapping_for_disease_to_gene(query_mesh_list, query_term_list):
+    query_mesh_list = set(query_mesh_list)
+    query_term_list = set(query_term_list)
+
+    mesh_to_term = defaultdict(lambda: set())
+    term_to_mesh = defaultdict(lambda: set())
+    prefix = "MESH:"
+
+    if query_mesh_list:
+        # use unique mesh name as mesh term
+
+        for query_mesh in query_mesh_list:
+            if not query_mesh.startswith(prefix):
+                query_mesh = prefix + query_mesh
+            name_list = mesh_name_kb.get_mesh_name_by_mesh_id(query_mesh)
+            name = name_list[0] if name_list else "-"
+            mesh_to_term[query_mesh].add(name)
+            term_to_mesh[name].add(query_mesh)
+
+        for query_term in query_term_list:
+            mesh_set = mesh_name_kb.get_mesh_id_by_all_source_name(query_term)
+            for mesh in mesh_set:
+                if not mesh.startswith(prefix):
+                    mesh = prefix + mesh
+                if mesh in mesh_to_term:
+                    continue
+                name_list = mesh_name_kb.get_mesh_name_by_mesh_id(mesh)
+                name = name_list[0] if name_list else "-"
+                mesh_to_term[mesh].add(name)
+                term_to_mesh[name].add(mesh)
+
+    else:
+        # mesh and term are n-to-n
+        for query_term in query_term_list:
+            mesh_set = mesh_name_kb.get_mesh_id_by_all_source_name(query_term)
+            for mesh in mesh_set:
+                if not mesh.startswith(prefix):
+                    mesh = prefix + mesh
+                mesh_to_term[mesh].add(query_term)
+                term_to_mesh[query_term].add(mesh)
+
+    return mesh_to_term, term_to_mesh
+
+
 @app.route("/run_disease_to_gene", methods=["POST"])
 def run_disease_to_gene():
     # url argument
@@ -1863,61 +1907,42 @@ def run_disease_to_gene():
 
     # mesh
     query_mesh_list = query.get("mesh_list", [])
-    query_name_list = query.get("disease_list", [])
-
-    mesh_set = set(query_mesh_list)
-    prefix = "MESH:"
-
-    for name in query_name_list:
-        name_mesh_set = mesh_name_kb.get_mesh_id_by_all_source_name(name)
-        clean_name_mesh_set = set()
-
-        for mesh in name_mesh_set:
-            if not mesh.startswith(prefix):
-                mesh = prefix + mesh
-            clean_name_mesh_set.add(mesh)
-
-        logger.info(f"[{name}] mesh_set={clean_name_mesh_set}")
-        mesh_set |= clean_name_mesh_set
-
-    mesh_list = sorted(mesh_set)
-    del mesh_set
-    logger.info(f"combined mesh_list={mesh_list}")
+    query_disease_list = query.get("disease_list", [])
+    mesh_to_disease, disease_to_mesh = get_term_mesh_mapping_for_disease_to_gene(query_mesh_list, query_disease_list)
+    for disease, mesh_set in disease_to_mesh.items():
+        logger.info(f"[query] disease={disease} mesh_set={mesh_set}")
 
     # show gene->score and gene->mesh
-    gene_score_list, mesh_to_gene_set = disease_to_gene.get_score(mesh_list)
+    gene_score_list, disease_to_gene_list = disease_to_gene.get_score(mesh_to_disease, disease_to_mesh)
 
-    gene_to_mesh = defaultdict(lambda: [])
-    for mesh, gene_set in mesh_to_gene_set.items():
-        mesh_name_list = mesh_name_kb.get_mesh_name_by_mesh_id(mesh)
-        if mesh_name_list:
-            mesh_name = mesh_name_list[0]
-        else:
-            mesh_name = "-"
-
-        for gene in gene_set:
-            gene_to_mesh[gene].append((mesh, mesh_name))
+    gene_to_disease = defaultdict(lambda: [])
+    for disease, gene_list in disease_to_gene_list.items():
+        for gene in gene_list:
+            gene_to_disease[gene].append(disease)
 
     width = 800
     table_html = f'<table style="width: {width}px;"><tr><th>Gene</th><th>Score</th><th>Disease</th></tr>'
+    prefix = "MESH:"
+
     for gene, score in gene_score_list:
         gene_name = ncbi_gene.id_to_name.get(gene, "-")
         gene_html = f'<a href="https://www.ncbi.nlm.nih.gov/gene/{gene}">[{html.escape(gene)}]</a> {html.escape(gene_name)}'
 
         score_html = html.escape(f"{score:.1f}")
 
-        mesh_name_list = gene_to_mesh[gene]
-        mesh_html_list = []
-        for mesh, mesh_name in mesh_name_list:
-            mesh = mesh[len(prefix):]
-            mesh_html = \
-                f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={mesh}">[{html.escape(mesh)}]</a>' \
-                f'&nbsp;{html.escape(mesh_name)}'
-            mesh_html_list.append(mesh_html)
+        disease_html_list = []
+        for disease in gene_to_disease[gene]:
+            mesh_html_list = []
+            for mesh in disease_to_mesh[disease]:
+                mesh = mesh[len(prefix):]
+                mesh_html = f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={mesh}">{html.escape(mesh)}</a>'
+                mesh_html_list.append(mesh_html)
+            disease_html = html.escape(", ").join(mesh_html_list)
+            disease_html = f"[{disease_html}] {html.escape(disease)}"
+            disease_html_list.append(disease_html)
+        disease_html = "<br />".join(disease_html_list)
 
-        mesh_html = "<br />".join(mesh_html_list)
-
-        table_html += f"<tr><td>{gene_html}</td><td>{score_html}</td><td>{mesh_html}</td></tr>"
+        table_html += f"<tr><td>{gene_html}</td><td>{score_html}</td><td>{disease_html}</td></tr>"
     table_html += "</table>"
 
     response = {"result": table_html}
@@ -1938,29 +1963,13 @@ def query_disease_to_gene():
 
     # mesh
     query_mesh_list = query.get("mesh_list", [])
-    query_name_list = query.get("disease_list", [])
+    query_disease_list = query.get("disease_list", [])
+    mesh_to_disease, disease_to_mesh = get_term_mesh_mapping_for_disease_to_gene(query_mesh_list, query_disease_list)
+    for disease, mesh_set in disease_to_mesh.items():
+        logger.info(f"[query] disease={disease} mesh_set={mesh_set}")
 
-    mesh_set = set(query_mesh_list)
-    prefix = "MESH:"
-
-    for name in query_name_list:
-        name_mesh_set = mesh_name_kb.get_mesh_id_by_all_source_name(name)
-        clean_name_mesh_set = set()
-
-        for mesh in name_mesh_set:
-            if not mesh.startswith(prefix):
-                mesh = prefix + mesh
-            clean_name_mesh_set.add(mesh)
-
-        logger.info(f"[{name}] mesh_set={clean_name_mesh_set}")
-        mesh_set |= clean_name_mesh_set
-
-    mesh_list = sorted(mesh_set)
-    del mesh_set
-    logger.info(f"combined mesh_list={mesh_list}")
-
-    # get (gene, name)->score and (mesh, name)->[(gene,name), ...]
-    gene_score_list, mesh_to_gene_set = disease_to_gene.get_score(mesh_list)
+    # get (gene, name) -> score and (disease, mesh_list) -> [(gene, name), ...]
+    gene_score_list, disease_to_gene_list = disease_to_gene.get_score(mesh_to_disease, disease_to_mesh)
 
     gene_to_name = {}
     gene_name_score_list = []
@@ -1970,23 +1979,23 @@ def query_disease_to_gene():
         gene_name_score_list.append(((gene, name), f"{score:.1f}"))
     gene_score_list = gene_name_score_list
 
-    mesh_gene_list = []
-    for mesh, gene_set in mesh_to_gene_set.items():
-        mesh_name_list = mesh_name_kb.get_mesh_name_by_mesh_id(mesh)
-        if mesh_name_list:
-            mesh_name = mesh_name_list[0]
+    disease_gene_list = []
+    for disease, gene_list in disease_to_gene_list.items():
+        mesh_set = disease_to_mesh[disease]
+        if mesh_set:
+            mesh_list = list(mesh_set)
         else:
-            mesh_name = "-"
+            mesh_list = ["-"]
 
         gene_list = [
             (gene, gene_to_name[gene])
-            for gene in gene_set
+            for gene in gene_list
         ]
 
-        mesh_gene_list.append(((mesh, mesh_name), gene_list))
+        disease_gene_list.append(((disease, mesh_list), gene_list))
 
     response["gene_score_list"] = gene_score_list
-    response["mesh_gene_list"] = mesh_gene_list
+    response["disease_gene_list"] = disease_gene_list
     return json.dumps(response)
 
 
