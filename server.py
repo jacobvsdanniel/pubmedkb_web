@@ -2094,7 +2094,10 @@ def run_mesh_disease():
 
     for mesh, name_list in mesh_to_namelist.items():
         mesh_html = f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={mesh[len(prefix):]}">{html.escape(mesh)}</a>'
-        name_html = html.escape(f"{name_list[0]}")
+
+        name_html = name_list[0] if name_list else "-"
+        name_html = html.escape(name_html)
+
         alias_html = [html.escape(alias) for alias in name_list[1:]]
         alias_html = "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;".join(alias_html)
 
