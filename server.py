@@ -1738,7 +1738,7 @@ def run_gd_db():
 
     gvd_score_data = gd_db.query_data(_type, arg_gene_id, "", arg_disease_id)
 
-    ann_list = ["clinvar", "panelapp"]
+    ann_list = ["clinvar2023", "clinvar", "panelapp"]
 
     # table header
     if "g" in _type:
