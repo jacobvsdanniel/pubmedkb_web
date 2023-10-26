@@ -11,7 +11,7 @@ from collections import defaultdict
 from flask import Flask, render_template, request
 
 from kb_utils import query_variant, NEN, V2G, NCBIGene, KB, PaperKB, GeVarToGLOF, Meta
-from kb_utils import GVDScore, DiseaseToGene
+from kb_utils import GVDScore, GDScore, DiseaseToGene
 from kb_utils import MESHNameKB, MESHGraph
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from summary_utils import Summary
@@ -46,6 +46,7 @@ paper_nen = PaperKB(None)
 paper_glof = PaperKB(None)
 entity_glof = GeVarToGLOF(None)
 gvd_score = GVDScore(None)
+gd_score = GDScore(None)
 gd_db = GVDScore(None)
 disease_to_gene = DiseaseToGene()
 mesh_name_kb = MESHNameKB(None)
@@ -1571,7 +1572,7 @@ def run_gvd_stats():
         "odds_ratio",
         "cre_Cause-associated", "cre_Appositive", "cre_In-patient",
         "spacy_ore", "openie_ore",
-        "sort_score",
+        "sort_score", "new_score",
     ]
 
     # table header
@@ -1623,7 +1624,9 @@ def run_gvd_stats():
 
         for _ann in ann_list:
             _score = _ann_to_score.get(_ann, 0)
-            if _score:
+            if isinstance(_score, str):
+                pass
+            elif _score:
                 _score = f"{_score:,}"
             else:
                 _score = "-"
@@ -1634,7 +1637,13 @@ def run_gvd_stats():
         cell = "".join(cell_list)
         return cell
 
+    def get_string_score(_score):
+        return f"{_score / 100:.1f}"
+
     if _type == "gd":
+        score = gd_score.query_data("gd", arg_gene_id, arg_disease_id)
+        gvd_score_data["new_score"] = get_string_score(score)
+
         gene_cell = get_table_cell_for_gene_id(arg_gene_id)
         disease_cell = get_table_cell_disease_id(arg_disease_id)
         ann_cell = get_table_cell_for_annotation(gvd_score_data)
@@ -1648,9 +1657,14 @@ def run_gvd_stats():
 
     elif _type == "g":
         gene_cell = get_table_cell_for_gene_id(arg_gene_id)
-        for i, (result_disease_id, ann_to_score) in enumerate(gvd_score_data.items()):
+        disease_to_score = gd_score.query_data("g", arg_gene_id, arg_disease_id)
+
+        for i, (result_disease_id, score) in enumerate(disease_to_score.items()):
             if top_k and i >= top_k:
                 break
+            ann_to_score = gvd_score_data.get(result_disease_id, {})
+            ann_to_score["new_score"] = get_string_score(score)
+
             disease_cell = get_table_cell_disease_id(result_disease_id)
             ann_cell = get_table_cell_for_annotation(ann_to_score)
             table_html += f"<tr>{gene_cell}{disease_cell}{ann_cell}</tr>"
@@ -1666,9 +1680,14 @@ def run_gvd_stats():
 
     elif _type == "d2g":
         disease_cell = get_table_cell_disease_id(arg_disease_id)
-        for i, (result_gene_id, ann_to_score) in enumerate(gvd_score_data.items()):
+        gene_to_score = gd_score.query_data("d", arg_gene_id, arg_disease_id)
+
+        for i, (result_gene_id, score) in enumerate(gene_to_score.items()):
             if top_k and i >= top_k:
                 break
+            ann_to_score = gvd_score_data.get(result_gene_id, {})
+            ann_to_score["new_score"] = get_string_score(score)
+
             gene_cell = get_table_cell_for_gene_id(result_gene_id)
             ann_cell = get_table_cell_for_annotation(ann_to_score)
             table_html += f"<tr>{gene_cell}{disease_cell}{ann_cell}</tr>"
@@ -1686,12 +1705,7 @@ def run_gvd_stats():
         assert False
 
     table_html += "</table>"
-
-    if "v" in _type:
-        width = 1800
-    else:
-        width = 1500
-    result = f'<div style="width: {width}px;">{table_html}</div>'
+    result = f'<div style="width: 100%;">{table_html}</div>'
 
     response = {
         "result": result,
@@ -1710,10 +1724,39 @@ def query_gvd_stats():
 
     gvd_score_data = gvd_score.query_data(_type, gene_id, variant_id, disease_id)
 
-    if top_k and _type in ["g", "v", "d2g", "d2v"]:
+    if top_k:
+        top_k = int(top_k)
+
+    if _type == "gd":
+        gvd_score_data["new_score"] = gd_score.query_data("gd", gene_id, disease_id)
+
+    elif _type == "g":
+        raw_gvd_score_data = gvd_score_data
+        gvd_score_data = {}
+        disease_to_score = gd_score.query_data("g", gene_id, disease_id)
+
+        for i, (result_disease_id, score) in enumerate(disease_to_score.items()):
+            if top_k and i >= top_k:
+                break
+            ann_to_score = raw_gvd_score_data.get(result_disease_id, {})
+            ann_to_score["new_score"] = score
+            gvd_score_data[result_disease_id] = ann_to_score
+
+    elif _type == "d2g":
+        raw_gvd_score_data = gvd_score_data
+        gvd_score_data = {}
+        gene_to_score = gd_score.query_data("d", gene_id, disease_id)
+
+        for i, (result_gene_id, score) in enumerate(gene_to_score.items()):
+            if top_k and i >= top_k:
+                break
+            ann_to_score = raw_gvd_score_data.get(result_gene_id, {})
+            ann_to_score["new_score"] = score
+            gvd_score_data[result_gene_id] = ann_to_score
+
+    elif top_k and _type in ["v", "d2v"]:
         full_gvd_score_data = gvd_score_data
         gvd_score_data = {}
-        top_k = int(top_k)
         for i, (k, ann_to_score) in enumerate(full_gvd_score_data.items()):
             if i >= top_k:
                 break
@@ -2302,6 +2345,7 @@ def main():
     parser.add_argument("--variant_dir")
     parser.add_argument("--glof_dir")
     parser.add_argument("--gvd_score_dir")
+    parser.add_argument("--gd_score_file")
     parser.add_argument("--gd_db_dir")
     parser.add_argument("--mesh_disease_dir")
 
@@ -2350,13 +2394,17 @@ def main():
         global gvd_score
         gvd_score = GVDScore(arg.gvd_score_dir)
 
+    if arg.gd_score_file:
+        global gd_score
+        gd_score = GDScore(arg.gd_score_file)
+
     if arg.gd_db_dir:
         global gd_db
         gd_db = GVDScore(arg.gd_db_dir, type_list=("gdas", "dgas"))
 
     if arg.gvd_score_dir and arg.gd_db_dir and arg.gene_dir:
         global disease_to_gene
-        disease_to_gene = DiseaseToGene(gvd_score, gd_db)
+        disease_to_gene = DiseaseToGene(gd_score, gd_db)
 
     if arg.mesh_disease_dir:
         global mesh_name_kb, mesh_graph

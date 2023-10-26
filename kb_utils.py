@@ -919,19 +919,49 @@ class GVDScore:
         return value
 
 
+class GDScore:
+    def __init__(self, mesh_gene_score_file):
+        self.mesh_gene_score_file = mesh_gene_score_file
+        self.dgs = {}
+        self.gds = {}
+
+        if mesh_gene_score_file:
+            self.load_data()
+        return
+
+    def load_data(self):
+        self.dgs = defaultdict(lambda: {})
+        self.gds = defaultdict(lambda: {})
+
+        with open(self.mesh_gene_score_file, "r", encoding="utf8", newline="") as f:
+            reader = csv.reader(f, dialect="csv")
+            for mesh, gene, score in reader:
+                score = int(score)
+                self.dgs[mesh][gene] = score
+                self.gds[gene][mesh] = score
+        return
+
+    def query_data(self, _type, g, d):
+        if _type == "gd":
+            value = self.dgs.get(d, {}).get(g, 0)
+        elif _type == "g":
+            value = self.gds.get(g, {})
+        elif _type == "d":
+            value = self.dgs.get(d, {})
+        else:
+            assert False
+        return value
+
+
 class DiseaseToGene:
-    def __init__(self, pubmedkb_gvd_score=None, db_gvd_score=None):
+    def __init__(self, pubmedkb_gd_score=None, db_gvd_score=None):
         self.group_to_score_range = [(1, 100), (101, 125)]
-        self.pubmedkb_gvd_score = pubmedkb_gvd_score
+        self.pubmedkb_gd_score = pubmedkb_gd_score
         self.db_gvd_score = db_gvd_score
         return
 
     def get_pubmedkb_score(self, mesh):
-        gene_ann_score = self.pubmedkb_gvd_score.query_data("d2g", "", "", mesh)
-        gene_to_score = {
-            gene: ann_to_score["sort_score"]
-            for gene, ann_to_score in gene_ann_score.items()
-        }
+        gene_to_score = self.pubmedkb_gd_score.query_data("d", "", mesh)
         return gene_to_score
 
     def get_db_score(self, mesh):
@@ -953,7 +983,7 @@ class DiseaseToGene:
                 clean_mesh_to_disease_set[mesh].add(disease)
         mesh_to_disease_set = clean_mesh_to_disease_set
 
-        # collect pubmedkb score and db score for all disease
+        # collect pubmedkb score and db score for all diseases
         disease_gene_dbscore = defaultdict(lambda: defaultdict(lambda: 0))
         disease_gene_pubmedkbscore = defaultdict(lambda: defaultdict(lambda: 0))
 
@@ -1003,12 +1033,12 @@ class DiseaseToGene:
 
         if gene_to_pubmedkbscore:
             max_pubmedkbscore = max(gene_to_pubmedkbscore.values())
-            max_pubmedkbscore = math.log(1 + max_pubmedkbscore)
+            # max_pubmedkbscore = math.log(1 + max_pubmedkbscore)
             if max_pubmedkbscore == 0:
                 max_pubmedkbscore = 1
 
             for gene, pubmedkbscore in gene_to_pubmedkbscore.items():
-                pubmedkbscore = math.log(1 + pubmedkbscore)
+                # pubmedkbscore = math.log(1 + pubmedkbscore)
                 dbscore = gene_to_dbscore[gene]
                 group = 1 if dbscore > 0 else 0
 
