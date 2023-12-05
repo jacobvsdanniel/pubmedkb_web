@@ -998,9 +998,12 @@ def run_rel():
     return json.dumps(response)
 
 
-@app.route("/query_rel")
+@app.route("/query_rel", methods=["GET", "POST"])
 def query_rel():
-    raw_arg = request.args
+    if request.method == "GET":
+        raw_arg = request.args
+    else:
+        raw_arg = json.loads(request.data)
 
     rel = Rel(raw_arg)
     rel.run_pipeline()
@@ -1025,9 +1028,12 @@ def query_rel():
     return json.dumps(response)
 
 
-@app.route("/query_rel_statistics")
+@app.route("/query_rel_statistics", methods=["GET", "POST"])
 def query_rel_statistics():
-    raw_arg = request.args
+    if request.method == "GET":
+        raw_arg = request.args
+    else:
+        raw_arg = json.loads(request.data)
 
     rel = Rel(raw_arg)
     rel.run_no_pagination_get_statistics_pipeline()
@@ -1418,12 +1424,17 @@ def run_varsum():
     return json.dumps(response)
 
 
-@app.route("/query_varsum")
+@app.route("/query_varsum", methods=["GET", "POST"])
 def query_varsum():
     response = {}
 
+    if request.method == "GET":
+        arg = request.args
+    else:
+        arg = json.loads(request.data)
+
     # url argument
-    query = request.args.get("query")
+    query = arg.get("query")
     response["url_argument"] = {
         "query": query,
     }
@@ -1992,13 +2003,18 @@ def run_disease_to_gene():
     return json.dumps(response)
 
 
-@app.route("/query_disease_to_gene")
+@app.route("/query_disease_to_gene", methods=["GET", "POST"])
 def query_disease_to_gene():
     response = {}
 
     # url argument
-    query = request.args.get("query")
-    query = json.loads(query)
+    if request.method == "GET":
+        query = request.args.get("query")
+        query = json.loads(query)
+    else:
+        data = json.loads(request.data)
+        query = json.loads(data["query"])
+
     response["url_argument"] = {
         "query": query,
     }

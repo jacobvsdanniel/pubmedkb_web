@@ -113,6 +113,35 @@ function get_json() {
 }
 
 
+function post_json() {
+    document.getElementById("div_status").innerHTML = "Loading...";
+
+    query_spec = get_query_spec()
+    e1_spec = query_spec[0]
+    e2_spec = query_spec[1]
+    pmid = query_spec[2]
+
+    request_data = {
+        "e1_spec": e1_spec,
+        "e2_spec": e2_spec,
+        "pmid": pmid,
+        "paper_start": document.getElementById("ta_paper_start").value,
+        "paper_end": document.getElementById("ta_paper_end").value,
+        "paper_sort": document.getElementById("sl_paper_sort").value,
+    }
+
+    fetch("./query_rel", {method: "post", body: JSON.stringify(request_data)})
+    .then(function(response){
+        return response.json();
+    })
+    .then(function(response_data){
+        text = "<pre><code>" + JSON.stringify(response_data, null, 4) + "</code></pre>";
+        document.getElementById("div_result").innerHTML = text;
+        document.getElementById("div_status").innerHTML = "Ready";
+    })
+}
+
+
 function get_statistics_json() {
     query_spec = get_query_spec()
     e1_spec = query_spec[0]
@@ -129,4 +158,30 @@ function get_statistics_json() {
     url = `${url}&pmid=${pmid}`
 
     window.open(url, "_blank");
+}
+
+
+function post_statistics_json() {
+    document.getElementById("div_status").innerHTML = "Loading...";
+
+    query_spec = get_query_spec()
+    e1_spec = query_spec[0]
+    e2_spec = query_spec[1]
+    pmid = query_spec[2]
+
+    request_data = {
+        "e1_spec": e1_spec,
+        "e2_spec": e2_spec,
+        "pmid": pmid,
+    }
+
+    fetch("./query_rel_statistics", {method: "post", body: JSON.stringify(request_data)})
+    .then(function(response){
+        return response.json();
+    })
+    .then(function(response_data){
+        text = "<pre><code>" + JSON.stringify(response_data, null, 4) + "</code></pre>";
+        document.getElementById("div_result").innerHTML = text;
+        document.getElementById("div_status").innerHTML = "Ready";
+    })
 }
