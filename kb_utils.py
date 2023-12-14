@@ -11,6 +11,13 @@ import unicodedata
 from collections import defaultdict
 
 import requests
+import retriv
+from retriv import HybridRetriever
+
+try:
+    from gpt_utils import run_qa, run_qka
+except ModuleNotFoundError:
+    pass
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -477,6 +484,40 @@ class NCBIGene:
             for alias, id_list in alias_to_id.items():
                 if len(id_list) == 1:
                     self.alias_to_id[alias] = id_list[0]
+        return
+
+
+class VariantNEN:
+    def __init__(self, variant_dir):
+        self.id_to_name = defaultdict(lambda: [])
+        self.name_to_id = defaultdict(lambda: [])
+
+        if variant_dir:
+            # RS
+            rs_file = os.path.join(variant_dir, f"rs.jsonl")
+            rs_prefix = "RS#:"
+            rs_prefix_len = len(rs_prefix)
+
+            with open(rs_file, "r", encoding="utf8") as f:
+                for line in f:
+                    _id = json.loads(line)
+                    name = "rs" + _id[rs_prefix_len:]
+                    self.id_to_name[_id].append(name)
+                    self.name_to_id[name].append(_id)
+
+            # HGVS
+            hgvs_file = os.path.join(variant_dir, f"hgvs.jsonl")
+            with open(hgvs_file, "r", encoding="utf8") as f:
+                for line in f:
+                    _id, name_to_count = json.loads(line)
+                    name_set = set()
+                    for name in name_to_count:
+                        name = name.lower()
+                        if name in name_set:
+                            continue
+                        name_set.add(name)
+                        self.id_to_name[_id].append(name)
+                        self.name_to_id[name].append(_id)
         return
 
 
@@ -1312,6 +1353,76 @@ class MESHGraph:
             "edge_list": sorted(edge_set),
         }
         return data
+
+
+class QA:
+    def __init__(self, retriv_dir):
+        self.retriv_dir = retriv_dir
+        self.retriever = None
+        self.k1 = 100000
+        self.k2 = 20
+
+        if self.retriv_dir:
+            self.load_data()
+        return
+
+    def load_data(self):
+        retriv.set_base_path(self.retriv_dir)
+        logger.info(f"[qa] loading retriv index ...")
+        self.retriever = HybridRetriever.load("hybrid_dgp")
+        logger.info("[qa] done loading retriv index")
+        return
+
+    def query(self, question, d_set, g_set, v_set):
+        logger.info(f"[qa] [question] {question}")
+        logger.info(f"[qa] retrieving knowledge...")
+        search_result_list = self.retriever.search(
+            query=question,
+            return_docs=True,
+            cutoff=self.k1,
+        )
+        logger.info(f"{len(search_result_list):,} search_results")
+
+        logger.info("[qa] filtering by targets...")
+        result_list = []
+        p_set = set()
+        for search_result in search_result_list:
+            datum = search_result["datum"]
+            p, d_name_matches, g_name_matches, v_name_matches, triplet_list = datum
+            if d_set:
+                for d in d_set:
+                    if d in d_name_matches:
+                        break
+                else:
+                    continue
+            if g_set or v_set:
+                for g in g_set:
+                    if g in g_name_matches:
+                        break
+                else:
+                    for v2 in v_name_matches:
+                        i = v2.find("_")
+                        g2 = v2[:i]
+                        if g2 in g_set:
+                            break
+                    else:
+                        for v in v_set:
+                            if v in v_name_matches:
+                                break
+                        else:
+                            continue
+            result_list.append((p, triplet_list))
+            p_set.add(p)
+            if len(result_list) >= self.k2:
+                break
+        logger.info(f"{len(result_list):,} filtered_results")
+
+        answer_1 = run_qa(question, "gpt-3.5-turbo", "", 1000)
+        if result_list:
+            answer_2 = run_qka(question, answer_1, result_list, "gpt-3.5-turbo-16k", "", 15000)
+        else:
+            answer_2 = answer_1
+        return answer_2, p_set
 
 
 def test_v2g(variant_dir, gene_dir):

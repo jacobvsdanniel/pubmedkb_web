@@ -10,7 +10,7 @@ from collections import defaultdict
 
 from flask import Flask, render_template, request
 
-from kb_utils import query_variant, NEN, V2G, NCBIGene, KB, PaperKB, GeVarToGLOF, Meta
+from kb_utils import query_variant, NEN, V2G, NCBIGene, VariantNEN, KB, PaperKB, GeVarToGLOF, Meta
 from kb_utils import GVDScore, GDScore, DiseaseToGene
 from kb_utils import MESHNameKB, MESHGraph
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
@@ -21,6 +21,7 @@ try:
     from gpt_utils import PaperGPT, ReviewGPT
 except ModuleNotFoundError:
     pass
+from kb_utils import QA
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ csv.register_dialect(
 nen = NEN(None)
 v2g = V2G(None, None)
 ncbi_gene = NCBIGene(None)
+variant_nen = VariantNEN(None)
 kb = KB(None)
 kb_meta = Meta(None)
 paper_nen = PaperKB(None)
@@ -51,6 +53,7 @@ gd_db = GVDScore(None)
 disease_to_gene = DiseaseToGene()
 mesh_name_kb = MESHNameKB(None)
 mesh_graph = MESHGraph(None)
+qa = QA(None)
 kb_type = None
 show_aid = False
 
@@ -133,6 +136,11 @@ def serve_disease_to_gene():
 @app.route("/mesh_disease")
 def serve_mesh_disease():
     return render_template("mesh_disease.html")
+
+
+@app.route("/qa")
+def serve_qa():
+    return render_template("qa.html")
 
 
 @app.route("/run_name_to_id_alias", methods=["POST"])
@@ -2349,6 +2357,163 @@ def query_mesh_disease():
     return json.dumps(response)
 
 
+@app.route("/run_qa", methods=["POST"])
+def run_qa():
+    # url argument
+    data = json.loads(request.data)
+    query = json.loads(data["query"])
+    logger.info(f"query={query}")
+
+    # disease
+    d_set = set(query.get("disease_id_list", []))
+    d_name_set = set(query.get("disease_name_list", []))
+    mesh_prefix = "MESH:"
+    for d_name in d_name_set:
+        mesh_set = mesh_name_kb.get_mesh_id_by_all_source_name(d_name)
+        for mesh in mesh_set:
+            if not mesh.startswith(mesh_prefix):
+                mesh = mesh_prefix + mesh
+            d_set.add(mesh)
+    logger.info(f"d_set={d_set}")
+
+    # gene
+    g_set = set(query.get("gene_id_list", []))
+    g_name_set = set(query.get("gene_name_list", []))
+    for g_name in g_name_set:
+        if g_name in ncbi_gene.name_to_id:
+            g_set.add(ncbi_gene.name_to_id[g_name])
+        elif g_name in ncbi_gene.alias_to_id:
+            g_set.add(ncbi_gene.alias_to_id[g_name])
+    logger.info(f"g_set={g_set}")
+
+    # variant
+    v_set = set(query.get("variant_id_list", []))
+    v_name_set = set(query.get("variant_name_list", []))
+    for v_name in v_name_set:
+        i = v_name.find("_")
+        if i == -1:
+            continue
+
+        v_g_name, v_v_name = v_name[:i], v_name[i + 1:]
+        if v_g_name in ncbi_gene.name_to_id:
+            v_g = ncbi_gene.name_to_id[v_g_name]
+        elif v_g_name in ncbi_gene.alias_to_id:
+            v_g = ncbi_gene.alias_to_id[v_g_name]
+        else:
+            continue
+
+        for v_v in variant_nen.name_to_id.get(v_v_name, []):
+            v = v_g + "_" + v_v
+            v_set.add(v)
+    logger.info(f"v_set={v_set}")
+
+    # qa
+    question = query["question"]
+    answer, p_set = qa.query(question, d_set, g_set, v_set)
+
+    # html
+    answer = "<br />".join([
+        html.escape(line)
+        for line in answer.split("\n")
+    ])
+    answer_html = f'<div style="font-size: 16px;">{answer}</div>'
+    reference_html = f'<div style="font-size: 22px;">Reference</div>'
+    reference_html += \
+        "<table><tr>" \
+        + "<th>PMID</th>" \
+        + "<th>Title</th>" \
+        + "<th>Year</th>" \
+        + "<th>Journal</th>" \
+        + "<th>Citation</th>" \
+        + "</tr>"
+    for pmid in p_set:
+        meta = kb_meta.get_meta_by_pmid(pmid)
+        reference_html += \
+            f'<tr><td><a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{pmid}</a></td>' \
+            + f"<td>{meta['title']}</td>" \
+            + f"<td>{meta['year']}</td>" \
+            + f"<td>{meta['journal']}</td>" \
+            + f"<td>{meta['citation']}</td></tr>"
+    reference_html += "</table>"
+    result = answer_html \
+        + "<br /><br />" \
+        + reference_html \
+        + "<br /><br /><br /><br /><br />"
+
+    response = {"result": result}
+    return json.dumps(response)
+
+
+@app.route("/query_qa", methods=["GET", "POST"])
+def query_qa():
+    response = {}
+
+    # url argument
+    if request.method == "GET":
+        query = request.args.get("query")
+        query = json.loads(query)
+    else:
+        data = json.loads(request.data)
+        query = json.loads(data["query"])
+
+    response["url_argument"] = {
+        "query": query,
+    }
+    logger.info(f"query={query}")
+
+    # disease
+    d_set = set(query.get("disease_id_list", []))
+    d_name_set = set(query.get("disease_name_list", []))
+    mesh_prefix = "MESH:"
+    for d_name in d_name_set:
+        mesh_set = mesh_name_kb.get_mesh_id_by_all_source_name(d_name)
+        for mesh in mesh_set:
+            if not mesh.startswith(mesh_prefix):
+                mesh = mesh_prefix + mesh
+            d_set.add(mesh)
+    logger.info(f"d_set={d_set}")
+
+    # gene
+    g_set = set(query.get("gene_id_list", []))
+    g_name_set = set(query.get("gene_name_list", []))
+    for g_name in g_name_set:
+        if g_name in ncbi_gene.name_to_id:
+            g_set.add(ncbi_gene.name_to_id[g_name])
+        elif g_name in ncbi_gene.alias_to_id:
+            g_set.add(ncbi_gene.alias_to_id[g_name])
+    logger.info(f"g_set={g_set}")
+
+    # variant
+    v_set = set(query.get("variant_id_list", []))
+    v_name_set = set(query.get("variant_name_list", []))
+    for v_name in v_name_set:
+        i = v_name.find("_")
+        if i == -1:
+            continue
+
+        v_g_name, v_v_name = v_name[:i], v_name[i + 1:]
+        if v_g_name in ncbi_gene.name_to_id:
+            v_g = ncbi_gene.name_to_id[v_g_name]
+        elif v_g_name in ncbi_gene.alias_to_id:
+            v_g = ncbi_gene.alias_to_id[v_g_name]
+        else:
+            continue
+
+        for v_v in variant_nen.name_to_id.get(v_v_name, []):
+            v = v_g + "_" + v_v
+            v_set.add(v)
+    logger.info(f"v_set={v_set}")
+
+    # qa
+    question = query["question"]
+    answer, p_set = qa.query(question, d_set, g_set, v_set)
+    pmid_list = list(p_set)
+    response["answer"] = answer
+    response["pmid_list"] = pmid_list
+
+    return json.dumps(response)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
@@ -2359,11 +2524,13 @@ def main():
     parser.add_argument("--paper_dir")
     parser.add_argument("--gene_dir")
     parser.add_argument("--variant_dir")
+    parser.add_argument("--variant_nen_dir")
     parser.add_argument("--glof_dir")
     parser.add_argument("--gvd_score_dir")
     parser.add_argument("--gd_score_file")
     parser.add_argument("--gd_db_dir")
     parser.add_argument("--mesh_disease_dir")
+    parser.add_argument("--retriv_dir")
 
     parser.add_argument("--kb_type", choices=["relation", "cooccur"])
     parser.add_argument("--kb_dir")
@@ -2393,6 +2560,10 @@ def main():
     if arg.gene_dir:
         global ncbi_gene
         ncbi_gene = NCBIGene(arg.gene_dir)
+
+    if arg.variant_nen_dir:
+        global variant_nen
+        variant_nen = VariantNEN(arg.variant_nen_dir)
 
     if arg.glof_dir:
         global paper_glof, entity_glof
@@ -2426,6 +2597,10 @@ def main():
         global mesh_name_kb, mesh_graph
         mesh_name_kb = MESHNameKB(arg.mesh_disease_dir)
         mesh_graph = MESHGraph(arg.mesh_disease_dir)
+
+    if arg.retriv_dir:
+        global qa
+        qa = QA(arg.retriv_dir)
 
     global show_aid
     show_aid = arg.show_aid == "true"
