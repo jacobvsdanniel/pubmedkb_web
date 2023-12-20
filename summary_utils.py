@@ -277,7 +277,7 @@ template_type_to_list = {
     ],
     "cre_patient_P": [
         [
-            ["varaint", "disease", "score", "pmid", "sentence"],
+            ["variant", "disease", "score", "pmid", "sentence"],
             [
                 "",
                 " occurs in some ",
@@ -312,7 +312,7 @@ template_type_to_list = {
     ],
     "cre_patient_X": [
         [
-            ["varaint", "disease", "score", "sentence"],
+            ["variant", "disease", "score", "sentence"],
             [
                 "",
                 " occurs in some ",
