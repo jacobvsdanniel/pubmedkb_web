@@ -12,7 +12,7 @@ from collections import defaultdict
 
 import requests
 import retriv
-from retriv import HybridRetriever
+from retriv import DenseRetriever
 
 try:
     from gpt_utils import run_qa, run_qka
@@ -1359,8 +1359,9 @@ class QA:
     def __init__(self, retriv_dir):
         self.retriv_dir = retriv_dir
         self.retriever = None
-        self.k1 = 100000
-        self.k2 = 20
+        self.top_dgp = 10000
+        self.top_p = 10
+        self.top_t = 30
 
         if self.retriv_dir:
             self.load_data()
@@ -1369,7 +1370,7 @@ class QA:
     def load_data(self):
         retriv.set_base_path(self.retriv_dir)
         logger.info(f"[qa] loading retriv index ...")
-        self.retriever = HybridRetriever.load("hybrid_dgp")
+        self.retriever = DenseRetriever.load("dense_dgp")
         logger.info("[qa] done loading retriv index")
         return
 
@@ -1379,13 +1380,15 @@ class QA:
         search_result_list = self.retriever.search(
             query=question,
             return_docs=True,
-            cutoff=self.k1,
+            cutoff=self.top_dgp,
         )
         logger.info(f"{len(search_result_list):,} search_results")
 
         logger.info("[qa] filtering by targets...")
         result_list = []
         p_set = set()
+        t_set = set()
+
         for search_result in search_result_list:
             datum = search_result["datum"]
             p, d_name_matches, g_name_matches, v_name_matches, triplet_list = datum
@@ -1412,14 +1415,20 @@ class QA:
                         else:
                             continue
             result_list.append((p, triplet_list))
+
             p_set.add(p)
-            if len(result_list) >= self.k2:
+            for head, predicate, tail in triplet_list:
+                t = f"{head} {predicate} {tail}".lower()
+                t_set.add(t)
+            if len(p_set) >= self.top_p and len(t_set) >= self.top_t:
                 break
-        logger.info(f"{len(result_list):,} filtered_results")
+        pmids = len(p_set)
+        triplets = len(t_set)
+        logger.info(f"{len(result_list):,} filtered_results: {pmids:,} pmids; {triplets:,} triplets;")
 
         answer_1 = run_qa(question, "gpt-3.5-turbo", "", 1000)
         if result_list:
-            answer_2 = run_qka(question, answer_1, result_list, "gpt-3.5-turbo-16k", "", 15000)
+            answer_2 = run_qka(question, answer_1, result_list, "gpt-4", "", 7000)
         else:
             answer_2 = answer_1
         return answer_2, p_set

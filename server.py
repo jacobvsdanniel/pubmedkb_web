@@ -2402,7 +2402,7 @@ def run_qa():
         else:
             continue
 
-        for v_v in variant_nen.name_to_id.get(v_v_name, []):
+        for v_v in variant_nen.name_to_id.get(v_v_name.lower(), []):
             v = v_g + "_" + v_v
             v_set.add(v)
     logger.info(f"v_set={v_set}")
@@ -2410,6 +2410,13 @@ def run_qa():
     # qa
     question = query["question"]
     answer, p_set = qa.query(question, d_set, g_set, v_set)
+
+    # reference
+    pmid_to_meta = {
+        p: kb_meta.get_meta_by_pmid(p)
+        for p in p_set
+    }
+    pmid_meta_list = sorted(pmid_to_meta.items(), key=lambda pm: -pm[1]["citation"])
 
     # html
     answer = "<br />".join([
@@ -2426,8 +2433,7 @@ def run_qa():
         + "<th>Journal</th>" \
         + "<th>Citation</th>" \
         + "</tr>"
-    for pmid in p_set:
-        meta = kb_meta.get_meta_by_pmid(pmid)
+    for pmid, meta in pmid_meta_list:
         reference_html += \
             f'<tr><td><a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{pmid}</a></td>' \
             + f"<td>{meta['title']}</td>" \
