@@ -12,7 +12,7 @@ from flask import Flask, render_template, request
 
 from kb_utils import query_variant, NEN, V2G, NCBIGene, VariantNEN, KB, PaperKB, GeVarToGLOF, Meta
 from kb_utils import GVDScore, GDScore, DiseaseToGene
-from kb_utils import MESHNameKB, MESHGraph
+from kb_utils import MESHNameKB, MESHGraph, ChemicalDiseaseKB
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from summary_utils import Summary
 from variant_report_json import clinical_report as ClinicalReport
@@ -53,6 +53,7 @@ gd_db = GVDScore(None)
 disease_to_gene = DiseaseToGene()
 mesh_name_kb = MESHNameKB(None)
 mesh_graph = MESHGraph(None)
+chemical_disease_kb = ChemicalDiseaseKB(None)
 qa = QA(None)
 kb_type = None
 show_aid = False
@@ -136,6 +137,11 @@ def serve_disease_to_gene():
 @app.route("/mesh_disease")
 def serve_mesh_disease():
     return render_template("mesh_disease.html")
+
+
+@app.route("/chemical_to_disease")
+def serve_chemical_to_disease():
+    return render_template("chemical_to_disease.html")
 
 
 @app.route("/qa")
@@ -2520,6 +2526,104 @@ def query_qa():
     return json.dumps(response)
 
 
+@app.route("/query_chemical_to_disease", methods=["GET", "POST"])
+def query_chemical_to_disease():
+    response = {}
+
+    # url argument
+    if request.method == "GET":
+        query = request.args.get("query")
+        query = json.loads(query)
+    else:
+        data = json.loads(request.data)
+        query = json.loads(data["query"])
+
+    response["url_argument"] = {
+        "query": query,
+    }
+    logger.info(f"query={query}")
+
+    chemical_mesh = query.get("chemical_mesh", "")
+    disease_ann_pmidlist = chemical_disease_kb.get(chemical_mesh, {})
+
+    response["description"] = "[ann] 0: paper co-occurrence, 1: sentence co-occurrence"
+    response["disease_ann_pmidlist"] = disease_ann_pmidlist
+    return json.dumps(response)
+
+
+@app.route("/run_chemical_to_disease", methods=["POST"])
+def run_chemical_to_disease():
+    # url argument
+    data = json.loads(request.data)
+    query = json.loads(data["query"])
+    logger.info(f"query={query}")
+
+    # chemical
+    mesh_prefix = "MESH:"
+    mesh_prefix_len = len(mesh_prefix)
+    chemical_mesh = query.get("chemical_mesh", "")
+    if chemical_mesh.startswith(mesh_prefix):
+        chemical_non_prefix_mesh = chemical_mesh[mesh_prefix_len:]
+    else:
+        chemical_non_prefix_mesh = chemical_mesh
+        chemical_mesh = mesh_prefix + chemical_non_prefix_mesh
+
+    # disease
+    disease_ann_pmidlist = chemical_disease_kb.get(chemical_mesh, {})
+
+    # chemical html
+    chemical_mesh_html = html.escape(chemical_mesh)
+    chemical_html = (f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={chemical_non_prefix_mesh}">'
+                     f'{chemical_mesh_html}</a>')
+    chemical_html = f'<div style="font-size: 18px;">Chemical {chemical_html}</div>'
+
+    # disease table html
+    top_k = query.get("show_top_k", 20)
+    disease_table_html = (f'<table><tr>'
+                          f'<th>Disease</th>'
+                          f'<th>Co-paper PMID (showing top {top_k})</th>'
+                          f'<th>Co-sentence PMID (showing top {top_k})</th>'
+                          f'</tr>')
+
+    for disease_mesh, ann_to_pmidlist in disease_ann_pmidlist.items():
+        disease_non_prefix_mesh = disease_mesh[mesh_prefix_len:]
+
+        # disease html
+        disease_name = mesh_name_kb.mesh_to_mesh_name.get(disease_non_prefix_mesh, [])
+        if disease_name:
+            disease_name = disease_name[0]
+        else:
+            disease_name = "-"
+        disease_mesh_html = html.escape(disease_mesh)
+        disease_name_html = html.escape(disease_name)
+        disease_html = (f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={disease_non_prefix_mesh}">'
+                        f'[{disease_mesh_html}]</a><br />{disease_name_html}')
+
+        # pmid html
+        pmid_html_list = []
+
+        for pmid_list in ann_to_pmidlist:
+            pmids = len(pmid_list)
+            pmid_list = pmid_list[:top_k]
+            pmid_list = [
+                f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{html.escape(pmid)}</a>'
+                for pmid in pmid_list
+            ]
+            pmid_html = f"({pmids:,} PMIDs in total)<br />" + " &nbsp;&nbsp; ".join(pmid_list)
+            pmid_html_list.append(pmid_html)
+
+        disease_table_html += (f"<tr>"
+                               f"<td>{disease_html}</td>"
+                               f"<td>{pmid_html_list[0]}</td>"
+                               f"<td>{pmid_html_list[1]}</td>"
+                               f"</tr>")
+    disease_table_html += "</table>"
+
+    result_html = chemical_html + "<br />" + disease_table_html
+    response = {"result": result_html}
+    return json.dumps(response)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
@@ -2536,6 +2640,7 @@ def main():
     parser.add_argument("--gd_score_file")
     parser.add_argument("--gd_db_dir")
     parser.add_argument("--mesh_disease_dir")
+    parser.add_argument("--chemical_disease_dir")
     parser.add_argument("--retriv_dir")
 
     parser.add_argument("--kb_type", choices=["relation", "cooccur"])
@@ -2603,6 +2708,10 @@ def main():
         global mesh_name_kb, mesh_graph
         mesh_name_kb = MESHNameKB(arg.mesh_disease_dir)
         mesh_graph = MESHGraph(arg.mesh_disease_dir)
+
+    if arg.chemical_disease_dir:
+        global chemical_disease_kb
+        chemical_disease_kb = ChemicalDiseaseKB(arg.chemical_disease_dir)
 
     if arg.retriv_dir:
         global qa

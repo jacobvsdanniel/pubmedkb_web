@@ -1355,6 +1355,27 @@ class MESHGraph:
         return data
 
 
+class ChemicalDiseaseKB:
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self.chemical_disease_ann_pmidlist = {}
+        self.prefix = "MESH:"
+
+        if data_dir:
+            k_file = os.path.join(data_dir, "key.jsonl")
+            v_file = os.path.join(data_dir, "value.jsonl")
+            self.chemical_disease_ann_pmidlist = DiskDict(k_file, v_file)
+        return
+
+    def get(self, query, default_value=None):
+        if not query.startswith(self.prefix):
+            query = self.prefix + query
+
+        # ann-> 0: co-paper, 1: co-sentence
+        disease_ann_pmidlist = self.chemical_disease_ann_pmidlist.get(query, default_value)
+        return disease_ann_pmidlist
+
+
 class QA:
     def __init__(self, retriv_dir):
         self.retriv_dir = retriv_dir
