@@ -2,7 +2,6 @@ import os
 import csv
 import sys
 import json
-import math
 import heapq
 import difflib
 import logging
@@ -1353,6 +1352,49 @@ class MESHGraph:
             "edge_list": sorted(edge_set),
         }
         return data
+
+
+class MESHChemical:
+    def __init__(self, data_dir):
+        self.mesh_prefix = "MESH:"
+        self.data_dir = data_dir
+        self.mesh_to_mesh_name = {}
+        self.mesh_name_to_mesh = {}
+
+        if data_dir:
+            self.load_data()
+        return
+
+    def load_data(self):
+        descriptor_file = os.path.join(self.data_dir, "raw_json", "desc2023.jsonl")
+        supplemental_file = os.path.join(self.data_dir, "raw_json", "supp2023_clean.jsonl")
+
+        self.mesh_to_mesh_name = {}
+        self.mesh_name_to_mesh = defaultdict(lambda: set())
+
+        for name_file in [descriptor_file, supplemental_file]:
+            with open(name_file, "r", encoding="utf8") as f:
+                for line in f:
+                    mesh, name, alias_list, _ = json.loads(line)
+                    mesh = self.mesh_prefix + mesh
+
+                    self.mesh_to_mesh_name[mesh] = [name] + alias_list
+
+                    self.mesh_name_to_mesh[name.lower()].add(mesh)
+                    for alias in alias_list:
+                        self.mesh_name_to_mesh[alias.lower()].add(mesh)
+        return
+
+    def get_name_list_by_id(self, mesh):
+        if not mesh.startswith(self.mesh_prefix):
+            mesh = self.mesh_prefix + mesh
+        name_list = self.mesh_to_mesh_name.get(mesh, [])
+        return name_list
+
+    def get_id_set_by_name(self, name):
+        name = name.lower()
+        mesh_set = self.mesh_name_to_mesh.get(name, set())
+        return mesh_set
 
 
 class ChemicalDiseaseKB:
