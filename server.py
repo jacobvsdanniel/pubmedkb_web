@@ -4,7 +4,6 @@ import copy
 import html
 import json
 import logging
-import argparse
 import traceback
 from collections import defaultdict
 
@@ -2793,31 +2792,33 @@ def run_chemical_to_disease():
     return json.dumps(response)
 
 
+class Arg:
+    def __init__(self):
+        with open("server_config.json", "r", encoding="utf8") as f:
+            raw_arg = json.load(f)
+
+        self.nen_dir = raw_arg.get("nen_dir")
+        self.meta_dir = raw_arg.get("meta_dir")
+        self.paper_dir = raw_arg.get("paper_dir")
+        self.gene_dir = raw_arg.get("gene_dir")
+        self.variant_dir = raw_arg.get("variant_dir")
+        self.variant_nen_dir = raw_arg.get("variant_nen_dir")
+        self.glof_dir = raw_arg.get("glof_dir")
+        self.gvd_score_dir = raw_arg.get("gvd_score_dir")
+        self.gd_score_file = raw_arg.get("gd_score_file")
+        self.gd_db_dir = raw_arg.get("gd_db_dir")
+        self.mesh_disease_dir = raw_arg.get("mesh_disease_dir")
+        self.chemical_nen_dir = raw_arg.get("chemical_nen_dir")
+        self.chemical_disease_dir = raw_arg.get("chemical_disease_dir")
+        self.retriv_dir = raw_arg.get("retriv_dir")
+        self.kb_type = raw_arg.get("kb_type")
+        self.kb_dir = raw_arg.get("kb_dir")
+        self.show_aid = raw_arg.get("show_aid", "false")
+        return
+
+
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", default="12345")
-
-    parser.add_argument("--nen_dir")
-    parser.add_argument("--meta_dir")
-    parser.add_argument("--paper_dir")
-    parser.add_argument("--gene_dir")
-    parser.add_argument("--variant_dir")
-    parser.add_argument("--variant_nen_dir")
-    parser.add_argument("--glof_dir")
-    parser.add_argument("--gvd_score_dir")
-    parser.add_argument("--gd_score_file")
-    parser.add_argument("--gd_db_dir")
-    parser.add_argument("--mesh_disease_dir")
-    parser.add_argument("--chemical_nen_dir")
-    parser.add_argument("--chemical_disease_dir")
-    parser.add_argument("--retriv_dir")
-
-    parser.add_argument("--kb_type", choices=["relation", "cooccur"])
-    parser.add_argument("--kb_dir")
-    parser.add_argument("--show_aid", default="false", choices=["true", "false"])
-
-    arg = parser.parse_args()
+    arg = Arg()
     for key, value in vars(arg).items():
         if value is not None:
             logger.info(f"[{key}] {value}")
@@ -2894,10 +2895,13 @@ def main():
     global show_aid
     show_aid = arg.show_aid == "true"
 
-    app.run(host=arg.host, port=arg.port)
     return
 
 
-if __name__ == "__main__":
+if __name__ == "server":
     main()
+
+elif __name__ == "__main__":
+    main()
+    app.run(host="0.0.0.0", port=12345)
     sys.exit()
