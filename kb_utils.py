@@ -1455,6 +1455,8 @@ class QA:
         for search_result in search_result_list:
             datum = search_result["datum"]
             p, d_name_matches, g_name_matches, v_name_matches, triplet_list = datum
+            if not triplet_list:
+                continue
             if d_set:
                 for d in d_set:
                     if d in d_name_matches:
