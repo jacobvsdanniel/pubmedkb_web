@@ -14,7 +14,7 @@ from kb_utils import GVDScore, GDScore, DiseaseToGene
 from kb_utils import MESHNameKB, MESHGraph, MESHChemical, ChemicalDiseaseKB
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from summary_utils import Summary
-from variant_report_json import clinical_report as ClinicalReport
+from VarSum_germline import GermlineVarSum
 try:
     import gpt_utils
     from gpt_utils import PaperGPT, ReviewGPT
@@ -1433,7 +1433,7 @@ def run_varsum():
     query = json.loads(data["query"])
     logger.info(f"query={query}")
 
-    report = ClinicalReport(query)
+    report = GermlineVarSum(query, lang = 'En')
     report = report.generate_report()
     report = html.escape(report)
 
@@ -1461,7 +1461,7 @@ def query_varsum():
     logger.info(f"query={query}")
 
     # variant matches
-    report = ClinicalReport(query)
+    report = GermlineVarSum(query, lang = 'En')
     report = report.generate_report()
     response["report"] = report
     return json.dumps(response)
