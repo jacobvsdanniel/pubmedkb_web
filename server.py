@@ -154,6 +154,11 @@ def serve_qa():
     return render_template("qa.html")
 
 
+@app.route("/yolo")
+def serve_yolo():
+    return render_template("yolo.html")
+
+
 @app.route("/run_name_to_id_alias", methods=["POST"])
 def run_name_to_id_alias():
     data = json.loads(request.data)
@@ -2626,72 +2631,6 @@ def query_mesh_chemical():
     return json.dumps(response)
 
 
-@app.route("/query_chemical_to_disease", methods=["GET", "POST"])
-def query_chemical_to_disease():
-    response = {}
-
-    # url argument
-    if request.method == "GET":
-        query = request.args.get("query")
-        query = json.loads(query)
-    else:
-        data = json.loads(request.data)
-        query = json.loads(data["query"])
-
-    response["url_argument"] = {
-        "query": query,
-    }
-    logger.info(f"query={query}")
-
-    # chemical
-    mesh_prefix = "MESH:"
-    chemical_mesh = query.get("chemical_mesh", "")
-    if not chemical_mesh.startswith(mesh_prefix):
-        chemical_mesh = mesh_prefix + chemical_mesh
-    chemical_name = mesh_chemical.get_name_list_by_id(chemical_mesh)
-    chemical_name = chemical_name[0] if chemical_name else "-"
-    response["chemical_mesh"] = chemical_mesh
-    response["chemical_name"] = chemical_name
-
-    # disease
-    top_k = query.get("top_k", 5)
-    disease_ann_pmidlist = chemical_disease_kb.get(chemical_mesh, {})
-    disease_mesh_to_data = {}
-    response["disease_mesh_to_data"] = disease_mesh_to_data
-    pmid_to_data = {}
-    response["pmid_to_data"] = pmid_to_data
-
-    for disease_mesh, ann_to_pmidlist in disease_ann_pmidlist.items():
-        # mesh
-        disease_datum = {}
-        disease_mesh_to_data[disease_mesh] = disease_datum
-
-        # name
-        disease_name = mesh_name_kb.get_mesh_name_by_mesh_id(disease_mesh)
-        disease_name = disease_name[0] if disease_name else "-"
-        disease_datum["disease_name"] = disease_name
-
-        # annotation
-        for ann, pmid_list in zip(["paper", "sentence"], ann_to_pmidlist):
-            pmids = len(pmid_list)
-            disease_datum[f"co-{ann}_total_pmids"] = pmids
-
-            pmid_list = pmid_list[:top_k]
-            disease_datum[f"co-{ann}_top-k_pmid_list"] = pmid_list
-
-            for pmid in pmid_list:
-                if pmid not in pmid_to_data:
-                    meta = kb_meta.get_meta_by_pmid(pmid)
-                    pmid_to_data[pmid] = {
-                        "title": meta.get("title", ""),
-                        "year": meta.get("year", ""),
-                        "journal": meta.get("journal", ""),
-                        "citation": meta.get("citation", 0),
-                    }
-
-    return json.dumps(response)
-
-
 @app.route("/run_chemical_to_disease", methods=["POST"])
 def run_chemical_to_disease():
     # url argument
@@ -2792,6 +2731,98 @@ def run_chemical_to_disease():
     return json.dumps(response)
 
 
+@app.route("/query_chemical_to_disease", methods=["GET", "POST"])
+def query_chemical_to_disease():
+    response = {}
+
+    # url argument
+    if request.method == "GET":
+        query = request.args.get("query")
+        query = json.loads(query)
+    else:
+        data = json.loads(request.data)
+        query = json.loads(data["query"])
+
+    response["url_argument"] = {
+        "query": query,
+    }
+    logger.info(f"query={query}")
+
+    # chemical
+    mesh_prefix = "MESH:"
+    chemical_mesh = query.get("chemical_mesh", "")
+    if not chemical_mesh.startswith(mesh_prefix):
+        chemical_mesh = mesh_prefix + chemical_mesh
+    chemical_name = mesh_chemical.get_name_list_by_id(chemical_mesh)
+    chemical_name = chemical_name[0] if chemical_name else "-"
+    response["chemical_mesh"] = chemical_mesh
+    response["chemical_name"] = chemical_name
+
+    # disease
+    top_k = query.get("top_k", 5)
+    disease_ann_pmidlist = chemical_disease_kb.get(chemical_mesh, {})
+    disease_mesh_to_data = {}
+    response["disease_mesh_to_data"] = disease_mesh_to_data
+    pmid_to_data = {}
+    response["pmid_to_data"] = pmid_to_data
+
+    for disease_mesh, ann_to_pmidlist in disease_ann_pmidlist.items():
+        # mesh
+        disease_datum = {}
+        disease_mesh_to_data[disease_mesh] = disease_datum
+
+        # name
+        disease_name = mesh_name_kb.get_mesh_name_by_mesh_id(disease_mesh)
+        disease_name = disease_name[0] if disease_name else "-"
+        disease_datum["disease_name"] = disease_name
+
+        # annotation
+        for ann, pmid_list in zip(["paper", "sentence"], ann_to_pmidlist):
+            pmids = len(pmid_list)
+            disease_datum[f"co-{ann}_total_pmids"] = pmids
+
+            pmid_list = pmid_list[:top_k]
+            disease_datum[f"co-{ann}_top-k_pmid_list"] = pmid_list
+
+            for pmid in pmid_list:
+                if pmid not in pmid_to_data:
+                    meta = kb_meta.get_meta_by_pmid(pmid)
+                    pmid_to_data[pmid] = {
+                        "title": meta.get("title", ""),
+                        "year": meta.get("year", ""),
+                        "journal": meta.get("journal", ""),
+                        "citation": meta.get("citation", 0),
+                    }
+
+    return json.dumps(response)
+
+
+@app.route("/run_yolo", methods=["POST"])
+def run_yolo():
+    # query
+    query = json.loads(request.data)["query"]
+    logger.info(f"[run_yolo:query] {query}")
+
+    response = {"result": "WOLO"}
+    return json.dumps(response)
+
+
+@app.route("/query_yolo", methods=["GET", "POST"])
+def query_yolo():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[query_yolo:query] {query}")
+
+    response = {
+        "query": query,
+        "result": "WOLO",
+    }
+    return json.dumps(response)
+
+
 class Arg:
     def __init__(self):
         with open("server_config.json", "r", encoding="utf8") as f:
@@ -2835,7 +2866,7 @@ def main():
         global paper_nen
         paper_nen = PaperKB(arg.paper_dir)
 
-    if arg.gene_dir and arg.variant_dir:
+    if arg.variant_dir and arg.gene_dir:
         global v2g
         v2g = V2G(arg.variant_dir, arg.gene_dir)
 
@@ -2871,7 +2902,7 @@ def main():
         global gd_db
         gd_db = GVDScore(arg.gd_db_dir, type_list=("gdas", "dgas"))
 
-    if arg.gvd_score_dir and arg.gd_db_dir and arg.gene_dir:
+    if True:
         global disease_to_gene
         disease_to_gene = DiseaseToGene(gd_score, gd_db)
 
@@ -2892,9 +2923,11 @@ def main():
         global qa
         qa = QA(arg.retriv_dir)
 
-    global show_aid
-    show_aid = arg.show_aid == "true"
+    if True:
+        global show_aid
+        show_aid = arg.show_aid == "true"
 
+    logger.info("API loaded")
     return
 
 
