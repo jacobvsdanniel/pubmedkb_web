@@ -149,6 +149,11 @@ def serve_chemical_to_disease():
     return render_template("chemical_to_disease.html")
 
 
+@app.route("/question_to_paper")
+def serve_question_to_paper():
+    return render_template("question_to_paper.html")
+
+
 @app.route("/qa")
 def serve_qa():
     return render_template("qa.html")
@@ -2373,6 +2378,105 @@ def query_mesh_disease():
     return json.dumps(response)
 
 
+@app.route("/run_question_to_paper", methods=["GET", "POST"])
+def run_question_to_paper():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[run_question_to_paper:query] {query}")
+
+    # question to pmid
+    question = query["question"]
+    p_set = qa.query_paper(question)
+
+    # paper
+    paper_list = []
+    for pmid in p_set:
+        meta = kb_meta.get_meta_by_pmid(pmid)
+        raw_paper = paper_nen.query_data(pmid)
+        paper = {
+            "pmid": pmid,
+            "title": meta["title"],
+            "author": meta["author"],
+            "year": meta["year"],
+            "journal": meta["journal"],
+            "citation": meta["citation"],
+            "abstract": raw_paper.get("abstract", ""),
+        }
+        paper_list.append(paper)
+
+    paper_list = sorted(paper_list, key=lambda p: -p["citation"])
+
+    # html
+    reference_html = f'<div style="font-size: 22px;">Reference</div>'
+    reference_html += \
+        "<table><tr>" \
+        + "<th>PMID</th>" \
+        + "<th>Title</th>" \
+        + "<th>Year</th>" \
+        + "<th>Journal</th>" \
+        + "<th>Citation</th>" \
+        + "</tr>"
+    for paper in paper_list:
+        pmid = paper["pmid"]
+        reference_html += \
+            f'<tr><td><a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{pmid}</a></td>' \
+            + f"<td>{paper['title']}</td>" \
+            + f"<td>{paper['year']}</td>" \
+            + f"<td>{paper['journal']}</td>" \
+            + f"<td>{paper['citation']}</td></tr>"
+    reference_html += "</table>"
+    reference_html = reference_html + "<br /><br /><br /><br /><br />"
+
+    # result
+    response = {
+        "query": query,
+        "result": reference_html,
+    }
+    return json.dumps(response)
+
+
+@app.route("/query_question_to_paper", methods=["GET", "POST"])
+def query_question_to_paper():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[query_question_to_paper:query] {query}")
+
+    # question to pmid
+    question = query["question"]
+    p_set = qa.query_paper(question)
+
+    # paper
+    paper_list = []
+    for pmid in p_set:
+        meta = kb_meta.get_meta_by_pmid(pmid)
+        raw_paper = paper_nen.query_data(pmid)
+        paper = {
+            "pmid": pmid,
+            "title": meta["title"],
+            "author": meta["author"],
+            "year": meta["year"],
+            "journal": meta["journal"],
+            "citation": meta["citation"],
+            "abstract": raw_paper.get("abstract", ""),
+        }
+        paper_list.append(paper)
+
+    paper_list = sorted(paper_list, key=lambda p: -p["citation"])
+
+    # result
+    response = {
+        "query": query,
+        "result": paper_list,
+    }
+    return json.dumps(response)
+
+
 @app.route("/run_qa", methods=["POST"])
 def run_qa():
     # url argument
@@ -2797,13 +2901,20 @@ def query_chemical_to_disease():
     return json.dumps(response)
 
 
-@app.route("/run_yolo", methods=["POST"])
+@app.route("/run_yolo", methods=["GET", "POST"])
 def run_yolo():
     # query
-    query = json.loads(request.data)["query"]
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
     logger.info(f"[run_yolo:query] {query}")
 
-    response = {"result": "WOLO"}
+    # result
+    response = {
+        "query": query,
+        "result": "WOLO",
+    }
     return json.dumps(response)
 
 
@@ -2816,6 +2927,7 @@ def query_yolo():
         query = json.loads(request.data)["query"]
     logger.info(f"[query_yolo:query] {query}")
 
+    # result
     response = {
         "query": query,
         "result": "WOLO",

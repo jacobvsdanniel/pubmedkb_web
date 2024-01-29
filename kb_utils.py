@@ -1437,6 +1437,61 @@ class QA:
         logger.info("[qa] done loading retriv index")
         return
 
+    def query_paper(self, question, d_set=None, g_set=None, v_set=None):
+        logger.info(f"[qa] [question] {question}")
+        logger.info(f"[qa] retrieving knowledge...")
+        search_result_list = self.retriever.search(
+            query=question,
+            return_docs=True,
+            cutoff=self.top_dgp,
+        )
+        logger.info(f"{len(search_result_list):,} search_results")
+
+        logger.info("[qa] filtering by targets...")
+        result_list = []
+        p_set = set()
+        t_set = set()
+
+        for search_result in search_result_list:
+            datum = search_result["datum"]
+            p, d_name_matches, g_name_matches, v_name_matches, triplet_list = datum
+            if not triplet_list:
+                continue
+            if d_set:
+                for d in d_set:
+                    if d in d_name_matches:
+                        break
+                else:
+                    continue
+            if g_set or v_set:
+                for g in g_set:
+                    if g in g_name_matches:
+                        break
+                else:
+                    for v2 in v_name_matches:
+                        i = v2.find("_")
+                        g2 = v2[:i]
+                        if g2 in g_set:
+                            break
+                    else:
+                        for v in v_set:
+                            if v in v_name_matches:
+                                break
+                        else:
+                            continue
+            result_list.append((p, triplet_list))
+
+            p_set.add(p)
+            for head, predicate, tail in triplet_list:
+                t = f"{head} {predicate} {tail}".lower()
+                t_set.add(t)
+            if len(p_set) >= self.top_p and len(t_set) >= self.top_t:
+                break
+        pmids = len(p_set)
+        triplets = len(t_set)
+        logger.info(f"{len(result_list):,} filtered_results: {pmids:,} pmids; {triplets:,} triplets;")
+        return p_set
+
     def query(self, question, d_set, g_set, v_set):
         logger.info(f"[qa] [question] {question}")
         logger.info(f"[qa] retrieving knowledge...")
