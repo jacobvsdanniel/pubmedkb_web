@@ -51,7 +51,7 @@
 &nbsp;&nbsp;
 <textarea id="ta_query" spellcheck="false" style="font-size: 16px; width: 30%; aspect-ratio: 3;">
 {
-    "arg1": "123",
+    "arg1": 3,
     "arg2": 456,
     "arg3": ["123", 456],
     "arg4": {"arg4-1": ["123", 456], "arg4-2": null}
@@ -59,7 +59,9 @@
 </textarea>
 <label style="font-size: 16px;">(JSON object string)</label>
 <br /><br />
-<button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="post_run_html()">show result</button>
+<button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="post_run_text()">show result</button>
+&nbsp;
+<button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="post_run_text_stream()">stream result</button>
 &nbsp;
 <button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="post_query_json()">post json</button>
 &nbsp;

@@ -4,6 +4,7 @@ import copy
 import html
 import json
 import logging
+import time
 import traceback
 from collections import defaultdict
 
@@ -2910,12 +2911,15 @@ def run_yolo():
         query = json.loads(request.data)["query"]
     logger.info(f"[run_yolo:query] {query}")
 
-    # result
-    response = {
-        "query": query,
-        "result": "WOLO",
-    }
-    return json.dumps(response)
+    # test
+    length = query["arg1"]
+
+    def response():
+        for i in range(1, 1 + length):
+            time.sleep(1)
+            yield f" #{i}"
+
+    return response()
 
 
 @app.route("/query_yolo", methods=["GET", "POST"])

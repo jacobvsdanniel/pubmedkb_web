@@ -1,4 +1,4 @@
-function post_run_html(){
+function post_run_text(){
     document.getElementById("div_status").innerHTML = "Loading...";
 
     query = document.getElementById("ta_query").value
@@ -7,10 +7,10 @@ function post_run_html(){
 
     fetch("./run_yolo", {method: "post", body: JSON.stringify(request_data)})
     .then(function(response){
-        return response.json();
+        return response.text();
     })
     .then(function(response_data){
-        document.getElementById("div_result").innerHTML = response_data["result"];
+        document.getElementById("div_result").innerHTML = response_data;
         document.getElementById("div_status").innerHTML = "Ready";
     })
 }
@@ -40,3 +40,21 @@ function get_query_json(){
     window.open(url, "_blank");
 }
 
+async function post_run_text_stream(){
+    document.getElementById("div_status").innerHTML = "Loading...";
+    document.getElementById("div_result").innerHTML = "";
+
+    query = document.getElementById("ta_query").value;
+    query = JSON.parse(query);
+    request_data = {"query": query};
+
+    const response = await fetch("./run_yolo", {method: "post", body: JSON.stringify(request_data)});
+    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+
+    while(true){
+      const {value, done} = await reader.read();
+      if (done) break;
+      document.getElementById("div_result").innerHTML += value;
+    }
+    document.getElementById("div_status").innerHTML = "Ready";
+}
