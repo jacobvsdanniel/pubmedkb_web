@@ -6,9 +6,10 @@
     <title>QA</title>
     <style>
         table {
-            font-family: Helvetica, sans-serif;
+            font-family: Helvetica;
             border-collapse: collapse;
             width: 100%;
+            font-size: 14px;
         }
         tr {
             background-color: #f5f5f5;
@@ -29,8 +30,14 @@
             color: white;
         }
         div, textarea {
-            font-family: Arial, Helvetica, sans-serif;
+            font-family: Helvetica;
             line-height: 1.5;
+        }
+        h1, label {
+            font-family: Helvetica;
+        }
+        .reference_header {
+            font-size: 22px;
         }
     </style>
 </head>
@@ -41,10 +48,10 @@
     pubmedKB API:&nbsp;&nbsp;<a href="home">home</a>&nbsp;&nbsp;<a href="qa">QA</a>
 </div>
 <br />
-<h1 style="font-family: Helvetica, sans-serif;">QA</h1>
+<h1>QA</h1>
 <br />
 
-<label style="font-size: 22px; font-family: Arial, Helvetica, sans-serif;">Query:</label><br />
+<label style="font-size: 22px;">Query:</label><br />
 &nbsp;&nbsp;
 <textarea id="ta_query" spellcheck="false" style="font-size: 16px; width: 60%; aspect-ratio: 5;">{
     "disease_name_list": [],
@@ -52,7 +59,7 @@
     "variant_name_list": ["BRAF_V600E"],
     "question": "What are the genetic variants related to lung cancer?"
 }</textarea>
-<label style="font-size: 16px; font-family: Arial, Helvetica, sans-serif;">(provide at least the "question")</label>
+<label style="font-size: 16px;">(provide at least the "question")</label>
 <br /><br />
 <button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="run_query()">show result</button>
 &nbsp;
@@ -64,7 +71,7 @@
 <br /><br />
 
 <div style="font-size: 30px;">Result<br /><br /></div>
-<div id="div_result" style="width: 80%; font-size: 14px;">None</div>
+<div id="div_result" style="width: 60%; font-size: 16px;">None</div>
 
 <script type="text/javascript" src="static/qa.js"></script>
 

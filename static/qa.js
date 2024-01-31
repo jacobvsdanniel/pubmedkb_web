@@ -1,18 +1,20 @@
-function run_query(){
+async function run_query(){
     document.getElementById("div_status").innerHTML = "Loading...";
+    document.getElementById("div_result").innerHTML = "";
 
-    request_data = {
-        "query": document.getElementById("ta_query").value,
-    };
+    query = document.getElementById("ta_query").value
+    query = JSON.parse(query)
+    request_data = {"query": query};
 
-    fetch("./run_qa", {method: "post", body: JSON.stringify(request_data)})
-    .then(function(response){
-        return response.json();
-    })
-    .then(function(response_data){
-        document.getElementById("div_result").innerHTML = response_data["result"];
-        document.getElementById("div_status").innerHTML = "Ready";
-    })
+    const response = await fetch("./run_qa", {method: "post", body: JSON.stringify(request_data)});
+    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+
+    while (true) {
+      const {value, done} = await reader.read();
+      if (done) break;
+      document.getElementById("div_result").innerHTML += value;
+    }
+    document.getElementById("div_status").innerHTML = "Ready";
 }
 
 function get_json(){
@@ -25,9 +27,9 @@ function get_json(){
 function post_json(){
     document.getElementById("div_status").innerHTML = "Loading...";
 
-    request_data = {
-        "query": document.getElementById("ta_query").value,
-    };
+    query = document.getElementById("ta_query").value
+    query = JSON.parse(query)
+    request_data = {"query": query};
 
     fetch("./query_qa", {method: "post", body: JSON.stringify(request_data)})
     .then(function(response){

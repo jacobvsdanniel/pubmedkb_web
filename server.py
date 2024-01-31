@@ -8,7 +8,7 @@ import time
 import traceback
 from collections import defaultdict
 
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, stream_with_context
 
 from kb_utils import query_variant, NEN, V2G, NCBIGene, VariantNEN, KB, PaperKB, GeVarToGLOF, Meta
 from kb_utils import GVDScore, GDScore, DiseaseToGene
@@ -2478,12 +2478,14 @@ def query_question_to_paper():
     return json.dumps(response)
 
 
-@app.route("/run_qa", methods=["POST"])
+@app.route("/run_qa", methods=["GET", "POST"])
 def run_qa():
-    # url argument
-    data = json.loads(request.data)
-    query = json.loads(data["query"])
-    logger.info(f"query={query}")
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[run_qa:query] {query}")
 
     # disease
     d_set = set(query.get("disease_id_list", []))
@@ -2530,7 +2532,7 @@ def run_qa():
 
     # qa
     question = query["question"]
-    answer, p_set = qa.query(question, d_set, g_set, v_set)
+    answer_completion, p_set = qa.query(question, d_set, g_set, v_set)
 
     # reference
     pmid_to_meta = {
@@ -2540,14 +2542,9 @@ def run_qa():
     pmid_meta_list = sorted(pmid_to_meta.items(), key=lambda pm: -pm[1]["citation"])
 
     # html
-    answer = "<br />".join([
-        html.escape(line)
-        for line in answer.split("\n")
-    ])
-    answer_html = f'<div style="font-size: 16px;">{answer}</div>'
-    reference_html = f'<div style="font-size: 22px;">Reference</div>'
+    reference_html = f'<div class="reference_header">Reference</div>'
     reference_html += \
-        "<table><tr>" \
+        '<table><tr>' \
         + "<th>PMID</th>" \
         + "<th>Title</th>" \
         + "<th>Year</th>" \
@@ -2562,31 +2559,34 @@ def run_qa():
             + f"<td>{meta['journal']}</td>" \
             + f"<td>{meta['citation']}</td></tr>"
     reference_html += "</table>"
-    result = answer_html \
-        + "<br /><br />" \
-        + reference_html \
-        + "<br /><br /><br /><br /><br />"
 
-    response = {"result": result}
-    return json.dumps(response)
+    def response():
+        for chunk in answer_completion:
+            text = chunk.choices[0].delta.content
+            if text:
+                text = html.escape(text)
+                text = text.replace("\n", "<br />")
+                yield text
+        yield f"<br /><br />{reference_html}<br /><br /><br /><br /><br />"
+        return
+
+    return stream_with_context(response())
 
 
 @app.route("/query_qa", methods=["GET", "POST"])
 def query_qa():
     response = {}
 
-    # url argument
+    # query
     if request.method == "GET":
-        query = request.args.get("query")
-        query = json.loads(query)
+        query = json.loads(request.args.get("query"))
     else:
-        data = json.loads(request.data)
-        query = json.loads(data["query"])
+        query = json.loads(request.data)["query"]
+    logger.info(f"[query_qa:query] {query}")
 
     response["url_argument"] = {
         "query": query,
     }
-    logger.info(f"query={query}")
 
     # disease
     d_set = set(query.get("disease_id_list", []))
@@ -2633,10 +2633,14 @@ def query_qa():
 
     # qa
     question = query["question"]
-    answer, p_set = qa.query(question, d_set, g_set, v_set)
-    pmid_list = list(p_set)
+    answer_completion, p_set = qa.query(question, d_set, g_set, v_set)
+    answer = ""
+    for chunk in answer_completion:
+        text = chunk.choices[0].delta.content
+        if text:
+            answer += text
     response["answer"] = answer
-    response["pmid_list"] = pmid_list
+    response["pmid_list"] = list(p_set)
 
     return json.dumps(response)
 

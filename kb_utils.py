@@ -14,7 +14,7 @@ import retriv
 from retriv import DenseRetriever
 
 try:
-    from gpt_utils import run_qa, run_qka
+    from gpt_utils import run_qa, run_qka, run_qa_stream, run_qka_stream
 except ModuleNotFoundError:
     pass
 
@@ -1547,11 +1547,11 @@ class QA:
         logger.info(f"{len(result_list):,} filtered_results: {pmids:,} pmids; {triplets:,} triplets;")
 
         if result_list:
-            answer_1 = run_qa(question, "gpt-3.5-turbo", "", 1000)
-            answer_2 = run_qka(question, answer_1, result_list, "gpt-4", "", 7000)
+            answer_text = run_qa(question, "gpt-3.5-turbo", "", 1000)
+            answer_completion = run_qka_stream(question, answer_text, result_list, "gpt-4", "", 7000)
         else:
-            answer_2 = run_qa(question, "gpt-4", "", 1000)
-        return answer_2, p_set
+            answer_completion = run_qa_stream(question, "gpt-4", "", 1000)
+        return answer_completion, p_set
 
 
 def test_v2g(variant_dir, gene_dir):
