@@ -3,8 +3,9 @@ import sys
 import copy
 import html
 import json
-import logging
 import time
+import asyncio
+import logging
 import traceback
 from collections import defaultdict
 
@@ -2532,7 +2533,9 @@ def run_qa():
 
     # qa
     question = query["question"]
-    answer_completion, p_set = qa.query(question, d_set, g_set, v_set)
+    answer_completion, p_set = asyncio.run(
+        qa.async_query(question, d_set, g_set, v_set)
+    )
 
     # reference
     pmid_to_meta = {
@@ -2633,7 +2636,9 @@ def query_qa():
 
     # qa
     question = query["question"]
-    answer_completion, p_set = qa.query(question, d_set, g_set, v_set)
+    answer_completion, p_set = asyncio.run(
+        qa.async_query(question, d_set, g_set, v_set)
+    )
     answer = ""
     for chunk in answer_completion:
         text = chunk.choices[0].delta.content
