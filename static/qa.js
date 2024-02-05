@@ -1,6 +1,5 @@
 async function run_query(){
     document.getElementById("div_status").innerHTML = "Loading...";
-    document.getElementById("div_result").innerHTML = "";
 
     query = document.getElementById("ta_query").value
     query = JSON.parse(query)
@@ -8,11 +7,13 @@ async function run_query(){
 
     const response = await fetch("./run_qa", {method: "post", body: JSON.stringify(request_data)});
     const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+    result = ""
 
     while (true) {
       const {value, done} = await reader.read();
       if (done) break;
-      document.getElementById("div_result").innerHTML += value;
+      result += value
+      document.getElementById("div_result").innerHTML = result;
     }
     document.getElementById("div_status").innerHTML = "Ready";
 }

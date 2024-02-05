@@ -7,6 +7,7 @@ import time
 import asyncio
 import logging
 import traceback
+import urllib.parse
 from collections import defaultdict
 
 from flask import Flask, render_template, request, stream_with_context
@@ -2545,32 +2546,41 @@ def run_qa():
     pmid_meta_list = sorted(pmid_to_meta.items(), key=lambda pm: -pm[1]["citation"])
 
     # html
-    reference_html = f'<div class="reference_header">Reference</div>'
-    reference_html += \
-        '<table><tr>' \
-        + "<th>PMID</th>" \
-        + "<th>Title</th>" \
-        + "<th>Year</th>" \
-        + "<th>Journal</th>" \
-        + "<th>Citation</th>" \
-        + "</tr>"
+    reference_line_list = [
+        '<div class="reference_header">Reference</div>',
+        "<table>",
+        "<tr><th>PMID</th><th>Title</th><th>Year</th><th>Journal</th><th>Citation</th></tr>",
+    ]
     for pmid, meta in pmid_meta_list:
-        reference_html += \
-            f'<tr><td><a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{pmid}</a></td>' \
-            + f"<td>{meta['title']}</td>" \
-            + f"<td>{meta['year']}</td>" \
-            + f"<td>{meta['journal']}</td>" \
-            + f"<td>{meta['citation']}</td></tr>"
-    reference_html += "</table>"
+        pmid_html, pmid_url = html.escape(pmid), urllib.parse.quote(pmid)
+        title = html.escape(meta["title"])
+        if not title:
+            continue
+        year = html.escape(meta["year"])
+        journal = html.escape(meta["journal"])
+        citation = html.escape(str(meta["citation"]))
+        reference_line_list.append(
+            f'<tr><td><a href="https://pubmed.ncbi.nlm.nih.gov/{pmid_url}">{pmid_html}</a></td>'
+            + f"<td>{title}</td>"
+            + f"<td>{year}</td>"
+            + f"<td>{journal}</td>"
+            + f"<td>{citation}</td></tr>"
+        )
+    reference_line_list.append("</table>")
 
     def response():
+        yield '<div class="answer">'
         for chunk in answer_completion:
             text = chunk.choices[0].delta.content
             if text:
                 text = html.escape(text)
                 text = text.replace("\n", "<br />")
                 yield text
-        yield f"<br /><br />{reference_html}<br /><br /><br /><br /><br />"
+        yield "</div>"
+        yield "<br /><br />"
+        for line in reference_line_list:
+            yield line
+        yield "<br /><br /><br /><br /><br />"
         return
 
     return stream_with_context(response())
