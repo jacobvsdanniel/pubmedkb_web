@@ -873,50 +873,54 @@ def get_normalized_journal_name(name):
 
 class Meta:
     def __init__(self, meta_dir):
-        self.meta_file = None
-        self.pmid_to_meta_offset = {}
+        self.meta_dir = meta_dir
+        self.pmid_to_meta = None
+        self.pmid_to_citation = None
+        self.journal_to_impact = None
+
+        if meta_dir:
+            self.load_data()
+        return
+
+    def load_data(self):
+        # pmid_to_meta
+        meta_key_file = os.path.join(self.meta_dir, "meta_key.jsonl")
+        meta_value_file = os.path.join(self.meta_dir, "meta_value.jsonl")
+        self.pmid_to_meta = DiskDict(meta_key_file, meta_value_file, key_process=lambda p: str(p))
+
+        # pmid_to_citation
+        self.pmid_to_citation = {}
+        pmid_citation_file = os.path.join(self.meta_dir, "pmid_citation.csv")
+        with open(pmid_citation_file, "r", encoding="utf8", newline="") as f:
+            reader = csv.reader(f, dialect="csv")
+            for pmid, citation in reader:
+                self.pmid_to_citation[pmid] = int(citation)
+
+        # journal_to_impact
         self.journal_to_impact = {}
-
-        if not meta_dir:
-            return
-
-        meta_file = os.path.join(meta_dir, "meta.jsonl")
-        self.meta_file = open(meta_file, "r", encoding="utf8")
-
-        pmid_to_meta_offset_file = os.path.join(meta_dir, "pmid_to_meta_offset.json")
-        self.pmid_to_meta_offset = read_json(pmid_to_meta_offset_file)
-
-        pmid_to_citation_file = os.path.join(meta_dir, "pmid_to_citation.json")
-        self.pmid_to_citation = read_json(pmid_to_citation_file)
-
-        journal_impact_file = os.path.join(meta_dir, "journal_impact.csv")
-        journal_impact_data = read_csv(journal_impact_file, "csv")
-        assert journal_impact_data[0] == [
-            "journal", "articles", "match_ratio", "match_substring", "match_journal", "match_impact",
-        ]
-        journal_impact_data = journal_impact_data[1:]
-        self.journal_to_impact = {}
-        for journal, _articles, match_ratio, match_substring, _match_journal, match_impact in journal_impact_data:
-            match_ratio = int(match_ratio[:-1])
-            if match_ratio >= 70 or match_substring == "True":
-                self.journal_to_impact[journal] = match_impact
+        journal_impact_file = os.path.join(self.meta_dir, "journal_impact.csv")
+        with open(journal_impact_file, "r", encoding="utf8", newline="") as f:
+            reader = csv.reader(f, dialect="csv")
+            header = next(reader)
+            assert header == [
+                "journal", "articles", "match_ratio", "match_substring", "match_journal", "match_impact",
+            ]
+            for journal, _articles, match_ratio, match_substring, _match_journal, match_impact in reader:
+                match_ratio = int(match_ratio[:-1])
+                if match_ratio >= 70 or match_substring == "True":
+                    self.journal_to_impact[journal] = match_impact
         return
 
     def get_meta_by_pmid(self, pmid):
         pmid = str(pmid)
 
-        offset = self.pmid_to_meta_offset.get(pmid)
-        if offset is None:
-            meta = {
-                "title": "",
-                "author": "",
-                "year": "",
-                "journal": "",
-            }
-        else:
-            self.meta_file.seek(offset)
-            meta = self.meta_file.readline()
-            meta = json.loads(meta)
+        meta = self.pmid_to_meta.get(
+            pmid,
+            {
+                "title": "", "author": "", "year": "", "journal": "",
+                "doi": "", "publication_type_list": "",
+            },
+        )
 
         meta["citation"] = self.pmid_to_citation.get(pmid, 0)
 

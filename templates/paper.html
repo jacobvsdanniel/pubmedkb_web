@@ -6,9 +6,10 @@
     <title>Paper Query</title>
     <style>
         table {
-            font-family: Helvetica, sans-serif;
+            font-family: Helvetica;
             border-collapse: collapse;
             width: 100%;
+            font-size: 14px;
         }
         tr {
             background-color: #f5f5f5;
@@ -28,21 +29,35 @@
             background-color: #04AA6D;
             color: white;
         }
+        div, textarea {
+            font-family: Helvetica;
+            line-height: 1.5;
+        }
+        h1, label {
+            font-family: Helvetica;
+        }
+        .result {
+            width: 60%;
+            font-size: 16px;
+        }
+        .sentence {
+            line-height: 2;
+        }
     </style>
 </head>
 
 <body>
 
-<div style="font-size: 16px; font-family: Helvetica, sans-serif; line-height: 1.5;">
+<div style="font-size: 16px;">
     pubmedKB API:&nbsp;&nbsp;<a href="home">home</a>&nbsp;&nbsp;<a href="paper">PAPER</a>
 </div>
 <br />
-<h1 style="font-family: Helvetica, sans-serif;">Paper Query</h1>
+<h1>Paper Query</h1>
 <br />
 
 <label style="font-size: 22px;">Query:</label>
 &nbsp;&nbsp;
-<textarea spellcheck="false" id="ta_query" style="font-size: 22px; width: 500px; height: 26px;">35246262</textarea>
+<textarea spellcheck="false" id="ta_query" style="font-size: 22px; width: 500px; height: 26px; line-height: 1.2;">35246262</textarea>
 <br /><br />
 <button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="run_query()">show table</button>
 &nbsp;
@@ -51,8 +66,8 @@
 <div id="div_status">Ready</div>
 <br /><br />
 
-<div style="font-size: 30px; font-family: Arial, Helvetica, sans-serif;">Result<br /><br /></div>
-<div id="div_result" style="width: 1300px; font-size: 14px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif;">None</div>
+<div style="font-size: 30px; font-family: Helvetica;">Result<br /><br /></div>
+<div id="div_result" class="result">None</div>
 
 <script type="text/javascript" src="static/paper.js"></script>
 

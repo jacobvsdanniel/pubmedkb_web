@@ -1087,23 +1087,30 @@ def run_paper():
 
     # pmid
     pmid = paper["pmid"]
-    pmid_html = '<div style="font-size: 20px; line-height: 200%;">' \
+    pmid_html = '<div style="font-size: 20px;">' \
                 f'PMID: <a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{pmid}</a>' \
                 '</div>'
 
     # meta
-    meta_html = [
-        f"Title: {meta['title']}",
-        f"Author: {meta['author']}",
-        f"Year: {meta['year']}",
-        f"Journal: {meta['journal']}",
-        f"PubMed Citation: {meta['citation']}",
+    meta_list = [
+        ("Title", meta["title"]),
+        ("Author", meta["author"]),
+        ("Year", meta["year"]),
+        ("Journal", meta["journal"]),
+        ("NIH Open Citation", meta["citation"]),
+        ("Publication Type", meta["publication_type_list"]),
     ]
-    meta_html = "<br />".join(
-        html.escape(term)
-        for term in meta_html
-    )
-    meta_html = f'<div style="font-size: 20px; line-height: 200%;">{meta_html}</div>'
+    meta_html = "<table><tr><th>Attribute</th><th>Value</th></tr>"
+    for name, content in meta_list:
+        name = html.escape(name)
+        if isinstance(content, list):
+            content = "<br />".join(html.escape(str(term)) for term in content)
+        else:
+            content = html.escape(str(content))
+        if not content:
+            content = "-"
+        meta_html += f"<tr><td>{name}</td><td>{content}</td></tr>"
+    meta_html += "</table>"
 
     # ner
     sentence_html_list = []
@@ -1134,8 +1141,8 @@ def run_paper():
         sentence_html += html.escape(sentence[last_j:])
         sentence_html_list.append(sentence_html)
 
-    ner_html = " ".join(sentence_html_list)
-    ner_html = f'<div style="font-size: 18px; line-height: 200%;">{ner_html}</div>'
+    ner_html = "Abstract.<br />" + " ".join(sentence_html_list)
+    ner_html = f'<div class="sentence">{ner_html}</div>'
 
     # nen
     nen_html = []
@@ -1145,7 +1152,7 @@ def run_paper():
         if not mention_list:
             continue
 
-        sentence_html = f'<div style="font-size: 18px; line-height: 200%;">{sentence_html_list[si]}</div>'
+        sentence_html = f'<div class="sentence">Sentence {si + 1}.<br />{sentence_html_list[si]}</div>'
         sentence_html += \
             "<table><tr>" \
             + "<th>Name</th>" \
@@ -1177,8 +1184,9 @@ def run_paper():
 
     # combined result
     result = pmid_html \
+             + "<br />" \
              + meta_html \
-             + "<br /><br /><br />" \
+             + "<br /><br />" \
              + ner_html \
              + "<br /><br /><br />" \
              + nen_html \
