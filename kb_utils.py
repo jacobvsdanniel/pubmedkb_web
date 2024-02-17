@@ -875,7 +875,6 @@ class Meta:
     def __init__(self, meta_dir):
         self.meta_dir = meta_dir
         self.pmid_to_meta = None
-        self.pmid_to_citation = None
         self.journal_to_impact = None
 
         if meta_dir:
@@ -886,15 +885,7 @@ class Meta:
         # pmid_to_meta
         meta_key_file = os.path.join(self.meta_dir, "meta_key.jsonl")
         meta_value_file = os.path.join(self.meta_dir, "meta_value.jsonl")
-        self.pmid_to_meta = DiskDict(meta_key_file, meta_value_file, key_process=lambda p: str(p))
-
-        # pmid_to_citation
-        self.pmid_to_citation = {}
-        pmid_citation_file = os.path.join(self.meta_dir, "pmid_citation.csv")
-        with open(pmid_citation_file, "r", encoding="utf8", newline="") as f:
-            reader = csv.reader(f, dialect="csv")
-            for pmid, citation in reader:
-                self.pmid_to_citation[pmid] = int(citation)
+        self.pmid_to_meta = DiskDict(meta_key_file, meta_value_file)
 
         # journal_to_impact
         self.journal_to_impact = {}
@@ -918,11 +909,9 @@ class Meta:
             pmid,
             {
                 "title": "", "author": "", "year": "", "journal": "",
-                "doi": "", "publication_type_list": "",
+                "doi": "", "publication_type_list": [], "citation": 0,
             },
         )
-
-        meta["citation"] = self.pmid_to_citation.get(pmid, 0)
 
         journal = get_normalized_journal_name(meta["journal"])
         meta["journal_impact"] = self.journal_to_impact.get(journal, "")

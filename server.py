@@ -1097,8 +1097,8 @@ def run_paper():
         ("Author", meta["author"]),
         ("Year", meta["year"]),
         ("Journal", meta["journal"]),
-        ("NIH Open Citation", meta["citation"]),
         ("Publication Type", meta["publication_type_list"]),
+        ("NIH Open Citation", meta["citation"]),
     ]
     meta_html = "<table><tr><th>Attribute</th><th>Value</th></tr>"
     for name, content in meta_list:
