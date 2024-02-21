@@ -1,6 +1,7 @@
 import os
 import csv
 import sys
+import html
 import json
 import heapq
 import asyncio
@@ -21,9 +22,10 @@ except ModuleNotFoundError:
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(message)s",
+    format="%(asctime)s - %(process)d - %(name)s - %(message)s",
     datefmt="%Y/%m/%d %H:%M:%S",
     level=logging.INFO,
+    force=True,
 )
 csv.register_dialect(
     "csv", delimiter=",", quoting=csv.QUOTE_MINIMAL, quotechar='"', doublequote=True,
@@ -918,6 +920,43 @@ class Meta:
         return meta
 
 
+def get_paper_meta_html(pmid, meta):
+    title = meta["title"]
+    if title and title[-1] not in [".", "?", "!"]:
+        title = title + "."
+    title_html = html.escape(title)
+    title_html = f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">[{html.escape(pmid)}]</a> {title_html}'
+
+    year = meta["year"]
+    if year:
+        year = year + "."
+    year = html.escape(year)
+
+    journal = meta["journal"]
+    if journal and journal[-1] not in [".", "?", "!"]:
+        journal = journal + "."
+    journal_html = html.escape(journal)
+    journal_html = f"<em>{journal_html}</em>"
+
+    doi = meta["doi"]
+    if doi:
+        doi_html = html.escape(f"doi.org/{doi}")
+        doi_html = f'<a href="https://doi.org/{doi}">{doi_html}</a>'
+    else:
+        doi_html = ""
+
+    publication_type = meta["publication_type_list"]
+    publication_type = ", ".join(html.escape(_type) for _type in publication_type)
+    if publication_type:
+        publication_type += "."
+
+    citation = meta["citation"]
+    citation_html = html.escape(f"Cited by {citation}.")
+
+    paper_meta_html = f"{title_html} {year} {journal_html} {doi_html} {publication_type} {citation_html}"
+    return paper_meta_html
+
+
 class GVDScore:
     def __init__(self, data_dir, type_list=("gdas", "dgas", "vdas", "dvas")):
         self.data_dir = data_dir
@@ -1091,6 +1130,7 @@ class MESHNameKB:
     def __init__(self, data_dir):
         self.data_dir = data_dir
 
+        self.prefix = "MESH:"
         self.mesh_to_mesh_name = {}
 
         self.mesh_name_to_mesh = {}
@@ -1113,6 +1153,8 @@ class MESHNameKB:
             with open(name_file, "r", encoding="utf8") as f:
                 for line in f:
                     mesh, name, alias_list, _ = json.loads(line)
+                    if not mesh.startswith(self.prefix):
+                        mesh = self.prefix + mesh
 
                     self.mesh_to_mesh_name[mesh] = [name] + alias_list
 
@@ -1132,6 +1174,8 @@ class MESHNameKB:
                 hpo, name, alias_list, mesh_list = json.loads(line)
 
                 for mesh in mesh_list:
+                    if not mesh.startswith(self.prefix):
+                        mesh = self.prefix + mesh
                     self.hpo_to_mesh[hpo].add(mesh)
                     self.hpo_name_to_mesh[name.lower()].add(mesh)
                     for alias in alias_list:
@@ -1146,6 +1190,8 @@ class MESHNameKB:
         with open(literature_file, "r", encoding="utf8") as f:
             for line in f:
                 mesh, name_list = json.loads(line)
+                if not mesh.startswith(self.prefix):
+                    mesh = self.prefix + mesh
                 for name in name_list:
                     self.literature_name_to_mesh[name.lower()].add(mesh)
         return
@@ -1157,8 +1203,8 @@ class MESHNameKB:
         return
 
     def get_mesh_name_by_mesh_id(self, mesh):
-        if mesh.startswith("MESH:"):
-            mesh = mesh[len("MESH:"):]
+        if not mesh.startswith(self.prefix):
+            mesh = self.prefix + mesh
         name_list = self.mesh_to_mesh_name.get(mesh, [])
         return name_list
 
@@ -1394,22 +1440,14 @@ class MESHChemical:
 class ChemicalDiseaseKB:
     def __init__(self, data_dir):
         self.data_dir = data_dir
-        self.chemical_disease_ann_pmidlist = {}
-        self.prefix = "MESH:"
+        self.t_x_y_ann_pmidlist = {}
 
         if data_dir:
-            k_file = os.path.join(data_dir, "key.jsonl")
-            v_file = os.path.join(data_dir, "value.jsonl")
-            self.chemical_disease_ann_pmidlist = DiskDict(k_file, v_file)
+            for t in ["cd", "dc"]:
+                key_file = os.path.join(data_dir, f"{t}_key.jsonl")
+                value_file = os.path.join(data_dir, f"{t}_value.jsonl")
+                self.t_x_y_ann_pmidlist[t] = DiskDict(key_file, value_file)
         return
-
-    def get(self, query, default_value=None):
-        if not query.startswith(self.prefix):
-            query = self.prefix + query
-
-        # ann-> 0: co-paper, 1: co-sentence
-        disease_ann_pmidlist = self.chemical_disease_ann_pmidlist.get(query, default_value)
-        return disease_ann_pmidlist
 
 
 class QA:

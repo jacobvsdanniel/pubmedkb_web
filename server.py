@@ -16,6 +16,7 @@ from kb_utils import query_variant, NEN, V2G, NCBIGene, VariantNEN, KB, PaperKB,
 from kb_utils import GVDScore, GDScore, DiseaseToGene
 from kb_utils import MESHNameKB, MESHGraph, MESHChemical, ChemicalDiseaseKB
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
+from kb_utils import get_paper_meta_html
 from summary_utils import Summary
 from VarSum_germline import GermlineVarSum
 try:
@@ -28,9 +29,10 @@ from kb_utils import QA
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(message)s",
+    format="%(asctime)s - %(process)d - %(name)s - %(message)s",
     datefmt="%Y/%m/%d %H:%M:%S",
     level=logging.INFO,
+    force=True,
 )
 csv.register_dialect(
     "csv", delimiter=",", quoting=csv.QUOTE_MINIMAL, quotechar='"', doublequote=True,
@@ -147,9 +149,9 @@ def serve_mesh_chemical():
     return render_template("mesh_chemical.html")
 
 
-@app.route("/chemical_to_disease")
-def serve_chemical_to_disease():
-    return render_template("chemical_to_disease.html")
+@app.route("/chemical_disease")
+def serve_chemical_disease():
+    return render_template("chemical_disease.html")
 
 
 @app.route("/question_to_paper")
@@ -1970,8 +1972,6 @@ def get_term_mesh_mapping_for_disease_to_gene(query_mesh_list, query_term_list):
         for query_term in query_term_list:
             mesh_set = mesh_name_kb.get_mesh_id_by_all_source_name(query_term)
             for mesh in mesh_set:
-                if not mesh.startswith(prefix):
-                    mesh = prefix + mesh
                 if mesh in mesh_to_term:
                     continue
                 name_list = mesh_name_kb.get_mesh_name_by_mesh_id(mesh)
@@ -1984,8 +1984,6 @@ def get_term_mesh_mapping_for_disease_to_gene(query_mesh_list, query_term_list):
         for query_term in query_term_list:
             mesh_set = mesh_name_kb.get_mesh_id_by_all_source_name(query_term)
             for mesh in mesh_set:
-                if not mesh.startswith(prefix):
-                    mesh = prefix + mesh
                 mesh_to_term[mesh].add(query_term)
                 term_to_mesh[query_term].add(mesh)
 
@@ -2144,8 +2142,8 @@ def run_mesh_disease():
     prefix = "MESH:"
 
     if query_type == "mesh":
-        if query.startswith(prefix):
-            query = query[len(prefix):]
+        if not query.startswith(prefix):
+            query = prefix + query
         if query in mesh_name_kb.mesh_to_mesh_name:
             mesh_list = [query]
         else:
@@ -2173,10 +2171,6 @@ def run_mesh_disease():
 
     else:
         assert False
-
-    for i, mesh in enumerate(mesh_list):
-        if not mesh.startswith(prefix):
-            mesh_list[i] = prefix + mesh
 
     # name
     mesh_to_namelist = {
@@ -2329,8 +2323,8 @@ def query_mesh_disease():
     prefix = "MESH:"
 
     if query_type == "mesh":
-        if query.startswith(prefix):
-            query = query[len(prefix):]
+        if not query.startswith(prefix):
+            query = prefix + query
         if query in mesh_name_kb.mesh_to_mesh_name:
             mesh_list = [query]
         else:
@@ -2358,10 +2352,6 @@ def query_mesh_disease():
 
     else:
         assert False
-
-    for i, mesh in enumerate(mesh_list):
-        if not mesh.startswith(prefix):
-            mesh_list[i] = prefix + mesh
 
     # name
     mesh_to_namelist = {
@@ -2504,8 +2494,6 @@ def run_qa():
     for d_name in d_name_set:
         mesh_set = mesh_name_kb.get_mesh_id_by_all_source_name(d_name)
         for mesh in mesh_set:
-            if not mesh.startswith(mesh_prefix):
-                mesh = mesh_prefix + mesh
             d_set.add(mesh)
     logger.info(f"d_set={d_set}")
 
@@ -2616,8 +2604,6 @@ def query_qa():
     for d_name in d_name_set:
         mesh_set = mesh_name_kb.get_mesh_id_by_all_source_name(d_name)
         for mesh in mesh_set:
-            if not mesh.startswith(mesh_prefix):
-                mesh = mesh_prefix + mesh
             d_set.add(mesh)
     logger.info(f"d_set={d_set}")
 
@@ -2763,108 +2749,125 @@ def query_mesh_chemical():
     return json.dumps(response)
 
 
-@app.route("/run_chemical_to_disease", methods=["POST"])
-def run_chemical_to_disease():
+class MESH:
+    def __init__(self, mesh, _type):
+        prefix = "MESH:"
+
+        if mesh.startswith(prefix):
+            suffix = mesh[len(prefix):]
+        else:
+            suffix = mesh
+            mesh = prefix + suffix
+        self.mesh = mesh
+        self.suffix = suffix
+
+        if _type == "c":
+            name = mesh_chemical.mesh_to_mesh_name.get(mesh, [])
+            name = name[0] if name else "-"
+        elif _type == "d":
+            name = mesh_name_kb.mesh_to_mesh_name.get(mesh, [])
+            name = name[0] if name else "-"
+        else:
+            assert False
+        self.name = name
+
+        name_html = html.escape(name)
+        name_html = f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={suffix}">[{suffix}]</a> {name_html}'
+        self.name_html = name_html
+        return
+
+
+@app.route("/run_chemical_disease", methods=["POST"])
+def run_chemical_disease():
     # url argument
     data = json.loads(request.data)
     query = json.loads(data["query"])
-    logger.info(f"query={query}")
+    logger.info(f"[chemical_disease] query={query}")
 
     # chemical
-    mesh_prefix = "MESH:"
-    mesh_prefix_len = len(mesh_prefix)
-    chemical_mesh = query.get("chemical_mesh", "")
-    if chemical_mesh.startswith(mesh_prefix):
-        chemical_non_prefix_mesh = chemical_mesh[mesh_prefix_len:]
+    query_c = query.get("chemical", "").strip()
+    if query_c:
+        c_set = mesh_chemical.get_id_set_by_name(query_c)
     else:
-        chemical_non_prefix_mesh = chemical_mesh
-        chemical_mesh = mesh_prefix + chemical_non_prefix_mesh
-    chemical_name = mesh_chemical.get_name_list_by_id(chemical_mesh)
-    chemical_name = chemical_name[0] if chemical_name else "-"
+        c_set = set()
 
     # disease
-    disease_ann_pmidlist = chemical_disease_kb.get(chemical_mesh, {})
+    query_d = query.get("disease", "").strip()
+    if query_d:
+        d_set = mesh_name_kb.get_mesh_id_by_all_source_name(query_d)
+    else:
+        d_set = set()
 
-    # chemical html
-    chemical_mesh_html = html.escape(chemical_mesh)
-    chemical_html = (f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={chemical_non_prefix_mesh}">'
-                     f'[{chemical_mesh_html}]</a>')
-    chemical_html = f'<div style="font-size: 18px;">{chemical_html} {chemical_name}</div>'
+    # chemical, disease, pmid
+    top_pairs = query.get("top_pairs", 20)
+    cd_data_list = []
 
-    # disease table html
-    top_k = query.get("top_k", 5)
-    disease_table_html = (f'<table><tr>'
-                          f'<th>Disease</th>'
-                          f'<th>Co-paper PMID (showing top {top_k})</th>'
-                          f'<th>Co-sentence PMID (showing top {top_k})</th>'
-                          f'</tr>')
+    if c_set and d_set:
+        for c in c_set:
+            for d in d_set:
+                ann_pmidlist = chemical_disease_kb.t_x_y_ann_pmidlist["cd"].get(c, {}).get(d, [[], []])
+                cd_data_list.append((c, d, ann_pmidlist))
+
+    elif c_set:
+        for c in c_set:
+            d_ann_pmidlist = chemical_disease_kb.t_x_y_ann_pmidlist["cd"].get(c, {})
+            for d, ann_pmidlist in d_ann_pmidlist.items():
+                cd_data_list.append((c, d, ann_pmidlist))
+
+    elif d_set:
+        for d in d_set:
+            c_ann_pmidlist = chemical_disease_kb.t_x_y_ann_pmidlist["dc"].get(d, {})
+            for c, ann_pmidlist in c_ann_pmidlist.items():
+                cd_data_list.append((c, d, ann_pmidlist))
+
+    cd_pairs = len(cd_data_list)
+    logger.info(f"[chemical_disease] retrieved {cd_pairs:,} chemical-disease pairs")
+    cd_data_list = cd_data_list[:top_pairs]
+
+    # paper metadata, result table
+    top_papers = query.get("top_papers", 5)
+    table_html = (f'<table><tr>'
+                      f'<th>Chemical</th>'
+                      f'<th>Disease</th>'
+                      f'<th>Co-paper PMID (showing top {top_papers})</th>'
+                      f'<th>Co-sentence PMID (showing top {top_papers})</th>'
+                      f'</tr>')
     large_break = '<br style="display: block; content: \' \'; margin-top: 10px;" />'
 
-    for disease_mesh, ann_to_pmidlist in disease_ann_pmidlist.items():
-        disease_non_prefix_mesh = disease_mesh[mesh_prefix_len:]
+    for c, d, ann_pmidlist in cd_data_list:
+        c_html = MESH(c, "c").name_html
+        d_html = MESH(d, "d").name_html
 
-        # disease html
-        disease_name = mesh_name_kb.mesh_to_mesh_name.get(disease_non_prefix_mesh, [])
-        if disease_name:
-            disease_name = disease_name[0]
-        else:
-            disease_name = "-"
-        disease_mesh_html = html.escape(disease_mesh)
-        disease_name_html = html.escape(disease_name)
-        disease_html = (f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={disease_non_prefix_mesh}">'
-                        f'[{disease_mesh_html}]</a><br />{disease_name_html}')
-
-        # pmid html
         ann_html_list = []
 
-        for pmid_list in ann_to_pmidlist:
+        for pmid_list in ann_pmidlist:
             pmids = len(pmid_list)
-            pmid_list = pmid_list[:top_k]
+            pmid_list = pmid_list[:top_papers]
             pmid_html_list = []
 
             for pmid in pmid_list:
                 meta = kb_meta.get_meta_by_pmid(pmid)
-
-                title = meta.get("title", "")
-                if title and title[-1] not in [".", "?", "!"]:
-                    title = title + "."
-                title_html = html.escape(title)
-                title_html = f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">[{html.escape(pmid)}]</a> {title_html}'
-
-                year = meta.get("year", "")
-                if year:
-                    year = year + "."
-                year = html.escape(year)
-
-                journal = meta.get("journal", "")
-                if journal and journal[-1] not in [".", "?", "!"]:
-                    journal = journal + "."
-                journal_html = html.escape(journal)
-                journal_html = f"<em>{journal_html}</em>"
-
-                citation = meta.get("citation", 0)
-                citation_html = html.escape(f"Cited by {citation}")
-
-                pmid_html = f"{title_html} {year} {journal_html} {citation_html}."
+                pmid_html = get_paper_meta_html(pmid, meta)
                 pmid_html_list.append(pmid_html)
 
             ann_html = f"({pmids:,} PMIDs in total){large_break}" + large_break.join(pmid_html_list)
             ann_html_list.append(ann_html)
 
-        disease_table_html += (f"<tr>"
-                               f"<td>{disease_html}</td>"
-                               f"<td>{ann_html_list[0]}</td>"
-                               f"<td>{ann_html_list[1]}</td>"
-                               f"</tr>")
-    disease_table_html += "</table>"
+        table_html += (f"<tr>"
+                           f"<td>{c_html}</td>"
+                           f"<td>{d_html}</td>"
+                           f"<td>{ann_html_list[0]}</td>"
+                           f"<td>{ann_html_list[1]}</td>"
+                           f"</tr>")
+    table_html += "</table>"
+    logger.info(f"[chemical_disease] result table created")
 
-    result_html = chemical_html + "<br />" + disease_table_html
-    response = {"result": result_html}
+    response = {"result": table_html}
     return json.dumps(response)
 
 
-@app.route("/query_chemical_to_disease", methods=["GET", "POST"])
-def query_chemical_to_disease():
+@app.route("/query_chemical_disease", methods=["GET", "POST"])
+def query_chemical_disease():
     response = {}
 
     # url argument
@@ -2881,50 +2884,74 @@ def query_chemical_to_disease():
     logger.info(f"query={query}")
 
     # chemical
-    mesh_prefix = "MESH:"
-    chemical_mesh = query.get("chemical_mesh", "")
-    if not chemical_mesh.startswith(mesh_prefix):
-        chemical_mesh = mesh_prefix + chemical_mesh
-    chemical_name = mesh_chemical.get_name_list_by_id(chemical_mesh)
-    chemical_name = chemical_name[0] if chemical_name else "-"
-    response["chemical_mesh"] = chemical_mesh
-    response["chemical_name"] = chemical_name
+    query_c = query.get("chemical", "").strip()
+    if query_c:
+        c_set = mesh_chemical.get_id_set_by_name(query_c)
+    else:
+        c_set = set()
 
     # disease
-    top_k = query.get("top_k", 5)
-    disease_ann_pmidlist = chemical_disease_kb.get(chemical_mesh, {})
-    disease_mesh_to_data = {}
-    response["disease_mesh_to_data"] = disease_mesh_to_data
-    pmid_to_data = {}
-    response["pmid_to_data"] = pmid_to_data
+    query_d = query.get("disease", "").strip()
+    if query_d:
+        d_set = mesh_name_kb.get_mesh_id_by_all_source_name(query_d)
+    else:
+        d_set = set()
 
-    for disease_mesh, ann_to_pmidlist in disease_ann_pmidlist.items():
-        # mesh
-        disease_datum = {}
-        disease_mesh_to_data[disease_mesh] = disease_datum
+    # chemical, disease, pmid
+    top_pairs = query.get("top_pairs", 20)
+    cd_data_list = []
 
-        # name
-        disease_name = mesh_name_kb.get_mesh_name_by_mesh_id(disease_mesh)
-        disease_name = disease_name[0] if disease_name else "-"
-        disease_datum["disease_name"] = disease_name
+    if c_set and d_set:
+        for c in c_set:
+            for d in d_set:
+                ann_pmidlist = chemical_disease_kb.t_x_y_ann_pmidlist["cd"].get(c, {}).get(d, [[], []])
+                cd_data_list.append((c, d, ann_pmidlist))
 
-        # annotation
-        for ann, pmid_list in zip(["paper", "sentence"], ann_to_pmidlist):
+    elif c_set:
+        for c in c_set:
+            d_ann_pmidlist = chemical_disease_kb.t_x_y_ann_pmidlist["cd"].get(c, {})
+            for d, ann_pmidlist in d_ann_pmidlist.items():
+                cd_data_list.append((c, d, ann_pmidlist))
+
+    elif d_set:
+        for d in d_set:
+            c_ann_pmidlist = chemical_disease_kb.t_x_y_ann_pmidlist["dc"].get(d, {})
+            for c, ann_pmidlist in c_ann_pmidlist.items():
+                cd_data_list.append((c, d, ann_pmidlist))
+
+    cd_pairs = len(cd_data_list)
+    logger.info(f"[chemical_disease] retrieved {cd_pairs:,} chemical-disease pairs")
+    cd_data_list = cd_data_list[:top_pairs]
+
+    # result data
+    top_papers = query.get("top_papers", 5)
+    chemical_disease_pmid_data = []
+    pmid_to_meta = {}
+
+    for c, d, ann_pmidlist in cd_data_list:
+        datum = {}
+
+        c = MESH(c, "c")
+        datum["chemical"] = (c.mesh, c.name)
+
+        d = MESH(d, "d")
+        datum["disease"] = (d.mesh, d.name)
+
+        for ann, pmid_list in zip(["paper", "sentence"], ann_pmidlist):
             pmids = len(pmid_list)
-            disease_datum[f"co-{ann}_total_pmids"] = pmids
+            datum[f"co-{ann}_total_pmids"] = pmids
 
-            pmid_list = pmid_list[:top_k]
-            disease_datum[f"co-{ann}_top-k_pmid_list"] = pmid_list
+            pmid_list = pmid_list[:top_papers]
+            datum[f"co-{ann}_top-k_pmid_list"] = pmid_list
 
             for pmid in pmid_list:
-                if pmid not in pmid_to_data:
-                    meta = kb_meta.get_meta_by_pmid(pmid)
-                    pmid_to_data[pmid] = {
-                        "title": meta.get("title", ""),
-                        "year": meta.get("year", ""),
-                        "journal": meta.get("journal", ""),
-                        "citation": meta.get("citation", 0),
-                    }
+                if pmid not in pmid_to_meta:
+                    pmid_to_meta[pmid] = kb_meta.get_meta_by_pmid(pmid)
+
+        chemical_disease_pmid_data.append(datum)
+
+    response["chemical_disease_pmid_data"] = chemical_disease_pmid_data
+    response["pmid_to_meta"] = pmid_to_meta
 
     return json.dumps(response)
 

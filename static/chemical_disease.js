@@ -5,7 +5,7 @@ function run_query(){
         "query": document.getElementById("ta_query").value,
     };
 
-    fetch("./run_chemical_to_disease", {method: "post", body: JSON.stringify(request_data)})
+    fetch("./run_chemical_disease", {method: "post", body: JSON.stringify(request_data)})
     .then(function(response){
         return response.json();
     })
@@ -18,7 +18,7 @@ function run_query(){
 function get_json(){
     query = document.getElementById("ta_query").value;
     query = encodeURIComponent(query)
-    url = `./query_chemical_to_disease?query=${query}`
+    url = `./query_chemical_disease?query=${query}`
     window.open(url, "_blank");
 }
 
@@ -29,7 +29,7 @@ function post_json(){
         "query": document.getElementById("ta_query").value,
     };
 
-    fetch("./query_chemical_to_disease", {method: "post", body: JSON.stringify(request_data)})
+    fetch("./query_chemical_disease", {method: "post", body: JSON.stringify(request_data)})
     .then(function(response){
         return response.json();
     })

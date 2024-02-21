@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Chemical to Disease</title>
+    <title>Chemical-Disease Lookup</title>
     <style>
         table {
             font-family: Helvetica;
@@ -41,17 +41,19 @@
 <body>
 
 <div style="font-size: 16px;">
-    pubmedKB API:&nbsp;&nbsp;<a href="home">home</a>&nbsp;&nbsp;<a href="chemical_to_disease">Chemical-to-Disease</a>
+    pubmedKB API:&nbsp;&nbsp;<a href="home">home</a>&nbsp;&nbsp;<a href="chemical_disease">Chemical-Disease</a>
 </div>
 <br />
-<h1>Chemical to Disease</h1>
+<h1>Chemical-Disease Lookup</h1>
 <br />
 
 <label style="font-size: 22px;">Query</label><br /><br />
 &nbsp;&nbsp;
-<textarea id="ta_query" spellcheck="false" style="font-size: 16px; width: 500px; aspect-ratio: 5;">{
-    "chemical_mesh": "MESH:C000606551",
-    "top_k": 5
+<textarea id="ta_query" spellcheck="false" style="font-size: 16px; width: 500px; aspect-ratio: 3;">{
+    "chemical": "Cisplatin",
+    "disease": "lung cancer",
+    "top_pairs": 20,
+    "top_papers": 5
 }</textarea>
 <br /><br />
 <button type="submit" class="input_submit" style="font-size: 18px; width: 120px; height: 35px;" onClick="run_query()">show result</button>
@@ -67,7 +69,7 @@
 
 <div id="div_result" style="width: 80%; font-size: 14px;">None</div>
 
-<script type="text/javascript" src="static/chemical_to_disease.js"></script>
+<script type="text/javascript" src="static/chemical_disease.js"></script>
 
 </body>
 
