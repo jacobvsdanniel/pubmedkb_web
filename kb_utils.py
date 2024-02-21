@@ -16,7 +16,7 @@ import retriv
 from retriv import DenseRetriever
 
 try:
-    from gpt_utils import async_run_qa, run_qa, run_qa_stream, run_qka_stream
+    from gpt_utils import async_run_qa, run_qa, run_qa_stream, run_qka_stream, run_pqa_stream
 except ModuleNotFoundError:
     pass
 
@@ -1659,6 +1659,11 @@ class QA:
             answer_completion = run_qa_stream(question, "gpt-4", "", 1000)
 
         return answer_completion, p_set
+
+
+def run_paper_qa(question, paper_list):
+    completion = run_pqa_stream(question, paper_list, "gpt-4", "", 7000)
+    return completion
 
 
 def test_v2g(variant_dir, gene_dir):

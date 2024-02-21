@@ -24,7 +24,7 @@ try:
     from gpt_utils import PaperGPT, ReviewGPT
 except ModuleNotFoundError:
     pass
-from kb_utils import QA
+from kb_utils import QA, run_paper_qa
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
@@ -152,6 +152,11 @@ def serve_mesh_chemical():
 @app.route("/chemical_disease")
 def serve_chemical_disease():
     return render_template("chemical_disease.html")
+
+
+@app.route("/chemical_disease_qa")
+def serve_chemical_disease_qa():
+    return render_template("chemical_disease_qa.html")
 
 
 @app.route("/question_to_paper")
@@ -2600,7 +2605,6 @@ def query_qa():
     # disease
     d_set = set(query.get("disease_id_list", []))
     d_name_set = set(query.get("disease_name_list", []))
-    mesh_prefix = "MESH:"
     for d_name in d_name_set:
         mesh_set = mesh_name_kb.get_mesh_id_by_all_source_name(d_name)
         for mesh in mesh_set:
@@ -2953,6 +2957,170 @@ def query_chemical_disease():
     response["chemical_disease_pmid_data"] = chemical_disease_pmid_data
     response["pmid_to_meta"] = pmid_to_meta
 
+    return json.dumps(response)
+
+
+def get_paper_list_for_chemical_disease_qa(query):
+    # chemical
+    query_c = query.get("chemical", "").strip()
+    if query_c:
+        c_set = mesh_chemical.get_id_set_by_name(query_c)
+    else:
+        c_set = set()
+
+    # disease
+    query_d = query.get("disease", "").strip()
+    if query_d:
+        d_set = mesh_name_kb.get_mesh_id_by_all_source_name(query_d)
+    else:
+        d_set = set()
+
+    # chemical, disease, pmid
+    top_pairs = query.get("top_pairs", 3)
+    cd_data_list = []
+
+    if c_set and d_set:
+        for c in c_set:
+            for d in d_set:
+                ann_pmidlist = chemical_disease_kb.t_x_y_ann_pmidlist["cd"].get(c, {}).get(d, [[], []])
+                cd_data_list.append((c, d, ann_pmidlist))
+
+    elif c_set:
+        for c in c_set:
+            d_ann_pmidlist = chemical_disease_kb.t_x_y_ann_pmidlist["cd"].get(c, {})
+            for d, ann_pmidlist in d_ann_pmidlist.items():
+                cd_data_list.append((c, d, ann_pmidlist))
+
+    elif d_set:
+        for d in d_set:
+            c_ann_pmidlist = chemical_disease_kb.t_x_y_ann_pmidlist["dc"].get(d, {})
+            for c, ann_pmidlist in c_ann_pmidlist.items():
+                cd_data_list.append((c, d, ann_pmidlist))
+
+    cd_pairs = len(cd_data_list)
+    logger.info(f"[run_chemical_disease_qa] retrieved {cd_pairs:,} chemical-disease pairs")
+    cd_data_list = cd_data_list[:top_pairs]
+
+    # pmid list
+    top_papers_per_pair = query.get("top_papers_per_pair", 8)
+    pmid_set = set()
+    pmid_list = []
+
+    for c, d, ann_pmidlist in cd_data_list:
+        pair_pmid_set = set()
+        for pair_pmid_list in ann_pmidlist[::-1]:
+            if len(pair_pmid_set) >= top_papers_per_pair:
+                break
+            for pmid in pair_pmid_list:
+                if len(pair_pmid_set) >= top_papers_per_pair:
+                    break
+                if pmid not in pair_pmid_set:
+                    pair_pmid_set.add(pmid)
+                    if pmid not in pmid_set:
+                        pmid_set.add(pmid)
+                        pmid_list.append(pmid)
+
+    pmids = len(pmid_list)
+    logger.info(f"[run_chemical_disease_qa] retrieved {pmids:,} PMIDs")
+
+    # paper data
+    paper_list = []
+    for pmid in pmid_list:
+        meta = kb_meta.get_meta_by_pmid(pmid)
+        paper = paper_nen.query_data(pmid)
+        meta["pmid"] = pmid
+        meta["abstract"] = paper["abstract"]
+        meta["sentence_list"] = paper["sentence_list"]
+        paper_list.append(meta)
+    return paper_list
+
+
+@app.route("/run_chemical_disease_qa", methods=["GET", "POST"])
+def run_chemical_disease_qa():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[run_chemical_disease_qa:query] {query}")
+
+    # paper
+    paper_list = get_paper_list_for_chemical_disease_qa(query)
+
+    # question
+    question = query.get("question", "").strip()
+
+    # answer
+    answer_completion = run_paper_qa(question, paper_list)
+
+    # reference
+    reference_line_list = [
+        '<div class="reference_header">Reference</div>',
+    ]
+    for paper in paper_list:
+        paper_html = get_paper_meta_html(paper["pmid"], paper)
+        paper_html += "<br />"
+        reference_line_list.append(paper_html)
+
+    large_break = '<br style="display: block; content: \' \'; margin-top: 10px;" />'
+
+    def response():
+        yield '<div class="answer">'
+        for chunk in answer_completion:
+            text = chunk.choices[0].delta.content
+            if text:
+                text = html.escape(text)
+                text = text.replace("\n", "<br />")
+                yield text
+        yield "</div>"
+        yield "<br /><br />"
+        for line in reference_line_list:
+            yield line
+            yield large_break
+        yield "<br /><br /><br /><br /><br />"
+        return
+
+    return response()
+
+
+@app.route("/query_chemical_disease_qa", methods=["GET", "POST"])
+def query_chemical_disease_qa():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[query_chemical_disease_qa:query] {query}")
+
+    # paper
+    paper_list = get_paper_list_for_chemical_disease_qa(query)
+
+    # question
+    question = query.get("question", "").strip()
+
+    # answer
+    answer_completion = run_paper_qa(question, paper_list)
+    answer = ""
+    for chunk in answer_completion:
+        text = chunk.choices[0].delta.content
+        if text:
+            answer += text
+
+    # reference
+    reference = []
+    attribute_list = ["title", "year", "journal", "doi", "publication_type_list", "citation"]
+    for paper in paper_list:
+        reference.append({
+            attribute: paper[attribute]
+            for attribute in attribute_list
+        })
+
+    # result
+    response = {
+        "query": query,
+        "answer": answer,
+        "reference": reference,
+    }
     return json.dumps(response)
 
 
