@@ -1,20 +1,19 @@
-# version 2024.01.23
 import re
 class HGVSpParser:
     def __init__(self, HGVSp):
         self.HGVSp, variant = self.HGVSp_preprocess(HGVSp)
         self.aa_pos_dict = self.HGVSp_aa_pos_parse(variant)
         self.text, self.text_zhtw = self.HGVSp_text(self.HGVSp, self.aa_pos_dict)
-    
+
     def HGVSp_preprocess(self, HGVSp):
-        variant = '.'
-        HGVSp = HGVSp.strip().replace('%3D', '=') # e.g. p.Cys188%3D -> p.Cys188=
-        if HGVSp != '.':
-            variant = HGVSp.split('.')[-1] # e.g. p.(Val7del) -> (Val7del)
-            if variant[0] == "(": 
-                variant = variant[1:-1]  # e.g. (Val7del) -> Val7del
-        variant = variant.replace('*', 'Ter') # e.g. His321Leufs*3 -> His321LeufsTer3
-        return HGVSp, variant # ['p.Cys188=', 'Cys188='] 
+            variant = '.'
+            HGVSp = HGVSp.strip().replace('%3D', '=') # e.g. p.Cys188%3D -> p.Cys188=
+            if HGVSp != '.':
+                variant = HGVSp.split('.')[-1] # e.g. p.(Val7del) -> (Val7del)
+                if variant[0] == "(": 
+                    variant = variant[1:-1]  # e.g. (Val7del) -> Val7del
+            variant = variant.replace('*', 'Ter') # e.g. His321Leufs*3 -> His321LeufsTer3
+            return HGVSp, variant # ['p.Cys188=', 'Cys188='] 
     
     def HGVSp_aa_pos_parse(self, variant):
         '''
@@ -68,11 +67,11 @@ class HGVSpParser:
             if "fsTer" in variant: # e.g. p.Arg97ProfsTer23
                 self.type = 'frame-shift_Ter'
                 split_var = variant.split('fsTer') # ['Arg97Pro', '23']
-                v1_AA1, v1_POS1, v2_AA1, _  = self.variant_parser(split_var[0]) # 'Arg97Pro' -> ['Arginine', '97', 'Proline', '.']
+                v1_AA1, v1_POS1, v1_AA2, v1_POS2  = self.variant_parser(split_var[0]) # 'Arg97Pro' -> ['Arginine', '97', 'Proline', '.']
                 v2_POS1 = split_var[-1] # '23'
             else: # e.g. p.Arg97fs (short for p.Arg97ProfsTer23)
                 split_var = variant.split('fs') # ['Arg97Pro']
-                v1_AA1, v1_POS1, v2_AA1, _  = self.variant_parser(split_var[0])  # 'Arg97Pro' -> ['Arginine', '97', 'Proline', '.']
+                v1_AA1, v1_POS1, v1_AA2, v1_POS2  = self.variant_parser(split_var[0])  # 'Arg97Pro' -> ['Arginine', '97', 'Proline', '.']
                 #v2_POS1 = split_var[-1]
 
         # extension
@@ -218,6 +217,7 @@ class HGVSpParser:
         parsing HGVSp into text
         '''
         if HGVSp == ".":
+            self.label = 0
             text =  "There is no substitution of amino acid."
             text_zhtw =  "此變異沒有造成胺基酸的置換。"
             self.type = "NA"
@@ -228,65 +228,78 @@ class HGVSpParser:
 
             # frameshift_or_start-lost (_?)
             if self.type == 'frameshift_or_start-lost':
+                self.label = 1
                 text = "This leads to the movement of the stop codon to the 3'UTR region"
                 text_zhtw = f"此變異導致終止密碼子移動至三端非轉譯區（3'UTR）中"
+            
             # deletion-insertion
             elif self.type == 'deletion-insertion':
                 if v1_POS2 == '.': # one amino acid deletion-insertion
                     #if 'Ter' in v2_AA1:
                     if re.search(r'^Ter/', v2_AA1[0]): # premature termination
+                        self.label = 2
                         v2_AA1 = [aa.replace('Ter/', '') for aa in v2_AA1]
                         text = f"This leads to the deletion of the {self.ordinal_suffix(v1_POS1)} amino acid, {v1_AA1[0]}, which is replaced with {v2_AA1[0]}, resulting in premature termination"
                         text_zhtw = f"這導致第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）被刪除，並被{v2_AA1[1]}（{v2_AA1[0]}）取代，形成過早的終止密碼子"
 
                     else:
+                        self.label = 3
                         text = f"This results in the deletion of the {self.ordinal_suffix(v1_POS1)} amino acid, {v1_AA1[0]}, which is replaced with {v2_AA1[0]}"
                         text_zhtw = f"這導致第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）被刪除，並被{v2_AA1[1]}（{v2_AA1[0]}）取代"
                 else: # a region of amino acids deletion-insertion
                     if re.search(r'^Ter/', v2_AA1[0]): # premature termination
+                        self.label = 4
                         v2_AA1 = [aa.replace('Ter/', '') for aa in v2_AA1]
                         text = f"This leads to the deletion of amino acids from the {self.ordinal_suffix(v1_POS1)} amino acid, {v1_AA1[0]}, to the {self.ordinal_suffix(v1_POS2)} amino acid, {v1_AA2[0]}, which are replaced with {v2_AA1[0]}, resulting in premature termination"
                         text_zhtw = f"這導致從第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）至第{v1_POS2}個胺基酸{v1_AA2[1]}（{v1_AA2[0]}）被刪除，並被{v2_AA1[1]}（{v2_AA1[0]}）取代，形成過早的終止密碼子"
 
                     else:
+                        self.label = 5
                         text = f"This results in the deletion of amino acids from the {self.ordinal_suffix(v1_POS1)}, {v1_AA1[0]}, to the {self.ordinal_suffix(v1_POS2)}, {v1_AA2[0]}, which are then replaced with {v2_AA1[0]}"
-                        # text_zhtw = f"這導致從第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）至第{v1_POS2}個胺基酸{v1_AA2[1]}（{v1_AA2[0]}），共{int(v1_POS2)-int(v1_POS1)+1}個胺基酸被刪除，並被{v2_AA1[1]}（{v2_AA1[0]}）取代"
                         text_zhtw = f"這導致從第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）至第{v1_POS2}個胺基酸{v1_AA2[1]}（{v1_AA2[0]}）被刪除，並被{v2_AA1[1]}（{v2_AA1[0]}）取代"
 
             # insertion   
             elif self.type == 'insertion':
                 if '-' in v2_AA1[0]: # insert more than one amino acids (AA1-AA2-AA3)
                     if re.search(r'^Ter/', v2_AA1[0]):
+                        self.label = 6
                         v2_AA1 = [aa.replace('Ter/', '') for aa in v2_AA1]
                         text = f"This leads to the insertion of amino acids, {v2_AA1[0]}, between the {self.ordinal_suffix(v1_POS1)} amino acid, {v1_AA1[0]}, and the {self.ordinal_suffix(v1_POS2)} amino acid, {v1_AA2[0]}, resulting in premature termination"
                         text_zhtw = f"這導致多個胺基酸{v2_AA1[1]}（{v2_AA1[0]}）插入於第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）和第{v1_POS2}個胺基酸{v1_AA2[1]}（{v1_AA2[0]}）之間，形成過早的終止密碼子"
 
                     else:
+                        self.label = 7
                         text = f"This results in the insertion of amino acids, {v2_AA1[0]}, between the {self.ordinal_suffix(v1_POS1)} amino acid, {v1_AA1[0]}, and the {self.ordinal_suffix(v1_POS2)} amino acid, {v1_AA2[0]}"
                         text_zhtw = f"這導致多個胺基酸{v2_AA1[1]}（{v2_AA1[0]}）插入於第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）和第{v1_POS2}個胺基酸{v1_AA2[1]}（{v1_AA2[0]}）之間"
                 else:
+                    self.label = 8
                     text = f"This results in the insertion of the amino acid {v2_AA1[0]} between the {self.ordinal_suffix(v1_POS1)} amino acid, {v1_AA1[0]}, and the {self.ordinal_suffix(v1_POS2)} amino acid, {v1_AA2[0]}"
                     text_zhtw = f"這導致胺基酸{v2_AA1[1]}（{v2_AA1[0]}）插入於第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）和第{v1_POS2}個胺基酸{v1_AA2[1]}（{v1_AA2[0]}）之間"
             
             elif self.type == 'insertion_Ter':
                 if v2_POS1 == '':
+                    self.label = 9
                     text = f"This results in the insertion of a stop codon between the {self.ordinal_suffix(v1_POS1)} amino acid, {v1_AA1[0]}, and the {self.ordinal_suffix(v1_POS2)} amino acid, {v1_AA2[0]}"
                     text_zhtw = f"這導致一個終止密碼子（a stop codon）插入於第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）和第{v1_POS2}個胺基酸{v1_AA2[1]}（{v1_AA2[0]}）之間"
                 else:
+                    self.label = 10
                     text = f"This results in the insertion of a {int(v2_POS1)-1}-amino-acid sequence ending up at a stop codon between the {self.ordinal_suffix(v1_POS1)} amino acid, {v1_AA1[0]}, and the {self.ordinal_suffix(v1_POS2)} amino acid, {v1_AA2[0]}"
                     text_zhtw = f"這導致{int(v2_POS1)-1}個胺基酸及一個終止密碼子（a stop codon）插入於第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）和第{v1_POS2}個胺基酸{v1_AA2[1]}（{v1_AA2[0]}）之間"
 
             # deletion
             elif self.type == 'deletion':
                 if v1_POS2 == '.':
+                    self.label = 11
                     ### one amino acid (p.aa_1POSdel, p.(aa_1POSdel))
                     text = f"This results in a deletion at the {self.ordinal_suffix(v1_POS1)} amino acid, {v1_AA1[0]}"
                     text_zhtw = f"這導致第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）被刪除"
                     if v1_AA2 == "=/":
+                        self.label = 12
                         ### mosaic(p.aa_1POS=/del)
                         text = f"The variant leads to a mosaic case that besides the normal amino acid {v1_AA1[0]} also protein is found containing a deletion at position {v1_POS1}"
                         text_zhtw = f"此變異導致了鑲嵌現象（mosaic case），蛋白質中的第{v1_POS1}個胺基酸，除了正常的{v1_AA1[1]}（{v1_AA1[0]}）外，也發現了一些蛋白質在這個位置上的胺基酸被刪除"
                 else:
+                    self.label = 13
                     ### several amino acid (p.aa_1POS1_aa_2POS2del, p.(aa_1POS1_aa_2POS2del))
                     text = f"This results in the deletion of amino acids from the {self.ordinal_suffix(v1_POS1)} amino acid, {v1_AA1[0]}, to the {self.ordinal_suffix(v1_POS2)} amino acid, {v1_AA2[0]}"
                     text_zhtw = f"這導致從第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）至第{v1_POS2}個胺基酸{v1_AA2[1]}（{v1_AA2[0]}），共{int(v1_POS2)-int(v1_POS1)+1}個胺基酸被刪除"
@@ -295,13 +308,16 @@ class HGVSpParser:
             elif self.type == 'duplication':
                 if v1_POS2 == '.':
                     ### one amino acid
+                    self.label = 14
                     if re.search(r'^=/', v1_AA2[0]): ### mosaic case
                         text = f"The variant leads to a mosaic case that besides the normal amino acid {v1_AA1[0]} also protein is found containing a duplication at position {v1_POS1}"
                         text_zhtw = f"此變異導致了鑲嵌現象（mosaic case），蛋白質中的第{v1_POS1}個胺基酸，除了正常的{v1_AA1[1]}（{v1_AA1[0]}）外，也發現了有一些蛋白質在這個位置上的胺基酸產生重複"
                     else:
+                        self.label = 15
                         text = f"This results in the duplication of the {self.ordinal_suffix(v1_POS1)} amino acid, {v1_AA1[0]}"
                         text_zhtw = f"這導致第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）產生重複"
                 else:
+                    self.label = 16
                     ### several amino acids
                     text = f"This results in the duplication of amino acids from the {self.ordinal_suffix(v1_POS1)} amino acid, {v1_AA1[0]}, to the {self.ordinal_suffix(v1_POS2)} amino acid, {v1_AA2[0]}"
                     text_zhtw = f"這導致從第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）至第{v1_POS2}個胺基酸{v1_AA2[1]}（{v1_AA2[0]}）產生重複"
@@ -310,40 +326,49 @@ class HGVSpParser:
             # frame-shift
             elif self.type == 'frame-shift':
                 if v2_POS1 == '':
-                    text = f'The {self.ordinal_suffix(v1_POS1)} amino acid was substituted from {v1_AA1[0]} to {v2_AA1[0]}. This results in the translation error of the following amino acids'
-                    text_zhtw = f"這導致第{v1_POS1}個胺基酸由{v1_AA1[1]}（{v1_AA1[0]}）置換為{v2_AA1[1]}（{v2_AA1[0]}），並產生移碼變異，造成轉譯錯誤"
+                    self.label = 17
+                    text = f'The {self.ordinal_suffix(v1_POS1)} amino acid was substituted from {v1_AA1[0]} to {v1_AA2[0]}. This results in the translation error of the following amino acids'
+                    text_zhtw = f"這導致第{v1_POS1}個胺基酸由{v1_AA1[1]}（{v1_AA1[0]}）置換為{v1_AA2[1]}（{v1_AA2[0]}），並產生移碼變異，造成轉譯錯誤"
                 else:
-                    text = f'The {self.ordinal_suffix(v1_POS1)} amino acid was substituted from {v1_AA1[0]} to {v2_AA1[0]}. This results in the translation error of the following {v2_POS1} amino acids'
-                    text_zhtw = f"這導致第{v1_POS1}個胺基酸由{v1_AA1[1]}（{v1_AA1[0]}）置換為{v2_AA1[1]}（{v2_AA1[0]}），並使得接續的{v2_POS1}個胺基酸產生移碼變異，造成轉譯錯誤"
+                    self.label = 18
+                    text = f'The {self.ordinal_suffix(v1_POS1)} amino acid was substituted from {v1_AA1[0]} to {v1_AA2[0]}. This results in the translation error of the following {v2_POS1} amino acids'
+                    text_zhtw = f"這導致第{v1_POS1}個胺基酸由{v1_AA1[1]}（{v1_AA1[0]}）置換為{v1_AA2[1]}（{v1_AA2[0]}），並使得接續的{v2_POS1}個胺基酸產生移碼變異，造成轉譯錯誤"
 
             elif self.type == "frame-shift_Ter":
                 if v2_POS1 == '?':
-                    text = f'The {self.ordinal_suffix(v1_POS1)} amino acid was substituted from {v1_AA1[0]} to {v2_AA1[0]}. But the new reading frame does not encounter a new translation termination (stop) codon'
-                    text_zhtw = f"這導致第{v1_POS1}個胺基酸由{v1_AA1[1]}（{v1_AA1[0]}）置換為{v2_AA1[1]}（{v2_AA1[0]}），但移碼變異後的結果並未包含新的終止密碼子"
+                    self.label = 19
+                    text = f'The {self.ordinal_suffix(v1_POS1)} amino acid was substituted from {v1_AA1[0]} to {v1_AA2[0]}. But the new reading frame does not encounter a new translation termination (stop) codon'
+                    text_zhtw = f"這導致第{v1_POS1}個胺基酸由{v1_AA1[1]}（{v1_AA1[0]}）置換為{v1_AA2[1]}（{v1_AA2[0]}），但移碼變異後的結果並未包含新的終止密碼子"
                 else:
-                    text = f"The {self.ordinal_suffix(v1_POS1)} amino acid was substituted from {v1_AA1[0]} to {v2_AA1[0]}. This results in the translation error of the following {v2_POS1} amino acids and leads to premature termination"
-                    text_zhtw = f"這導致第{v1_POS1}個胺基酸由{v1_AA1[1]}（{v1_AA1[0]}）置換為{v2_AA1[1]}（{v2_AA1[0]}），並使得接續的{v2_POS1}個胺基酸產生移碼變異，除了造成轉譯錯誤外也造成提前終止"
+                    self.label = 20
+                    text = f"The {self.ordinal_suffix(v1_POS1)} amino acid was substituted from {v1_AA1[0]} to {v1_AA2[0]}. This results in the translation error of the following {v2_POS1} amino acids and leads to premature termination"
+                    text_zhtw = f"這導致第{v1_POS1}個胺基酸由{v1_AA1[1]}（{v1_AA1[0]}）置換為{v1_AA2[1]}（{v1_AA2[0]}），並使得接續的{v2_POS1}個胺基酸產生移碼變異，除了造成轉譯錯誤外也造成提前終止"
 
             # extension
             elif self.type == 'extension_N-terminal':
+                self.label = 21
                 ### N-terminal (p.Met1extNEWPOS)
                 text = f"The variant, which is in the 5'UTR, activates a new upstream translation initiation site at {v2_POS1}"
                 text_zhtw = f"這導致了一個位於五端非轉譯區（5' UTR）中的變異，此變異於第{v2_POS1}個胺基酸的位置啟動了一個新的上游轉譯起始位點"
             elif self.type == 'extension_C-terminal':
                 ### C-terminal (p.TerPOSaa_1extTerNEWPOS, p.*POSaa_1ext*NEWPOS)
                 if v2_POS1 == "?":
+                    self.label = 22
                     text = f"This results in the replacement of a stop codon at position {v1_POS1} with a {v1_AA2[0]}, generating a no-stop variant and appending a sequence of new amino acids of an unknown length"
                     text_zhtw = f"這導致了位於第{v1_POS1}位置的終止密碼子置換為{v1_AA2[1]}（{v1_AA2[0]}），並增加了一段未知長度的新胺基酸序列於原序列尾端"
                 else:
+                    self.label = 23
                     text = f"This results in the replacement of a stop codon at position {v1_POS1} with a {v1_AA2[0]}, generating a no-stop variant and appending a sequence of new amino acids to the protein's C-terminus, ending at a new stop codon at position {v2_POS1}"
                     text_zhtw = f"這導致了位於第{v1_POS1}位置的終止密碼子置換為{v1_AA2[1]}（{v1_AA2[0]}），並於蛋白質的羧基端（C-terminus）增加了一段新的胺基酸序列，並結束於位在第{v2_POS1}個位置的新終止密碼子"
             
             # translation initiation codon
             elif self.type == 'translation_initiation_codon':
                 if v1_POS1 == '0':
+                    self.label = 24
                     text = "As a consequence of a variant in the translation initiation codon no protein is produced"
                     text_zhtw = "因變異位於轉譯起始密碼子，無任何蛋白質產生"
                 else:
+                    self.label = 25
                     text = "The impact of a variant affecting the translation initiation codon can not be reliably predicted at protein level"
                     text_zhtw = "此變異因對轉譯起始密碼子造成影響，無法在蛋白質層級被預測"
 
@@ -355,14 +380,16 @@ class HGVSpParser:
             # substitution
             else:
                 if v2_AA1[0] == 'silence change':
+                    self.label = 26
                     text = f"The {self.ordinal_suffix(v1_POS1)} amino acid, {v1_AA1[0]}, was affected, but it is a {v2_AA1[0]}"
                     text_zhtw = f"第{v1_POS1}個胺基酸{v1_AA1[1]}（{v1_AA1[0]}）被此變異影響，但為一個{v2_AA1[1]}"
                 elif re.search(r'^=/', v2_AA1[0]): # mosaic case
+                    self.label = 27
                     v2_AA1 = [aa.replace('=/', '') for aa in v2_AA1]
                     text = f"The variant leads to a mosaic case that besides the normal amino acid {v1_AA1[0]} also protein is found containing {v2_AA1[0]} at position {v1_POS1}"
                     text_zhtw = f"此變異造成鑲嵌現象（mosaic case），蛋白質中的第{v1_POS1}個胺基酸，除了正常的{v1_AA1[1]}（{v1_AA1[0]}）外，也發現了一些蛋白質在這個位置上的胺基酸置換為{v2_AA1[1]}（{v2_AA1[0]}）"
                 else:
+                    self.label = 28
                     text = f"This leads to the substitution of the {self.ordinal_suffix(v1_POS1)} amino acid from {v1_AA1[0]} to {v2_AA1[0]}"
                     text_zhtw = f"這導致第{v1_POS1}個胺基酸由{v1_AA1[1]}（{v1_AA1[0]}）置換為{v2_AA1[1]}（{v2_AA1[0]}）"
         return text + f" ({HGVSp}). ", text_zhtw + f"（{HGVSp}）。"
-

@@ -1,4 +1,3 @@
-# version 2024.01.23
 import re
 
 def find_CDS_pos(split_var):

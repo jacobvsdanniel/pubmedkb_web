@@ -1,4 +1,3 @@
-# version 20240423
 import random
 import numpy as np
 import pandas as pd
@@ -8,10 +7,11 @@ from HGVSp_parser import HGVSpParser
 from VarSum_utils import find_CDS_pos, ordinal_suffix, clinvar_translate, vep_consequence_translate
 
 class GermlineVarSum:
-    def __init__(self, sample, lang='Zh', sample_keys = None, create_data = False):
+    def __init__(self, sample, lang='Zh', sample_keys = None, create_data = False, delexicalized = False):
         self.sample = sample.copy()
         # setting
         self.lang = lang
+        self.delexicalized = delexicalized
         self.sample_keys = sample_keys if sample_keys else ['VEP_VEP-refseq-Gene-Name', 'VEP_VEP-refseq-HGVSc', 'Otherinfo_FORMAT-GT', 'VEP_VEP-refseq-Consequence', 'VEP_VEP-refseq-HGVSp',
                             'VEP_VEP-refseq-Exon-or-Intron-Rank', 'ClinVar_CLNSIG', 'VEP_VEP-ensembl-Transcript-ID',
                             'gnomAD-Genomes_AF-popmax', 'TaiwanBiobank-official_Illumina1000-AF', 'pathogenicHotspot-ailabs_pathogenicHotspot',
@@ -20,15 +20,25 @@ class GermlineVarSum:
                             'SpliceAI-SNV_DS-AG', 'SpliceAI-SNV_DS-AL', 'SpliceAI-SNV_DS-DG', 'SpliceAI-SNV_DS-DL', 
                             'Conservation Scores_phyloP100way-vertebrate-rankscore',
                             'ANNOVAR_ANNOVAR-ensembl-Transcript-ID'] #TODO: 資料改版後不使用此欄位
+
         self.pathogenicity_SW = ['SIFT', 'PolyPhen2', 'CADD-phred', 'VEST4', 'PROVEAN', 'DANN', 'spliceAI']
         self.conservation_SW = ['phyloP100way']
 
+        ## for linearization planning
+        self.shared_attributes = ['genotype', 'consequence', 'HGVSc', 'gene_name', 'reference', 'CDS_position', 'exon_or_intron_rank',
+                                  'HGVSp', #'original_position_init', 'original_amino_acid_init', 'original_position_end', 'original_amino_acid_end', 'changed_position', 'changed_amino_acid', 
+                                  'ClinVar_record', 'hotspot', 'gnomAD_freq', 'TaiwanBiobank_freq', 
+                                  'pathogenicity_prediction', 'conservation_prediction']
         # process
         self.preprocessing(self.sample, self.sample_keys)
         self.table = self.table_cleaning(self.sample, create_data)
+        if delexicalized:
+            self.delexicalized_table, self.reversed_map = self.delexicalize_table(self.table)
+            self.text_enus_delexicalized = self.template_enus(self.delexicalized_table, delexicalized = True)
         self.text_enus = self.template_enus(self.table)
         self.text_zhtw = self.template_zhtw(self.table)
         self.template_na()
+
 
     def preprocessing(self, sample, keys):
         for key in keys:
@@ -263,9 +273,63 @@ class GermlineVarSum:
         else:
             table['hotspot'] = '.'
             table['hotspot_zhtw'] ='.'
-
+        
         return table
     
+    def delexicalize_table(self, table):
+        delexicalized_table = table.copy()
+        reversed_map = {}
+        delexicalization = {
+            'gene_name': 'GENE',
+            #'genotype': 'GENOTYPE',
+            'consequence': 'CONSEQUENCE',
+            #'CDS_position': 'CDS_POS',
+            'HGVSc':'HGVSC',
+            'reference': 'REFERENCE',
+            #'HGVSp': 'HGVSP',
+            'ClinVar_record': 'CLINVARRECORD',
+            #'gnomAD_freq': 'FREQUENCY_1',
+            #'TaiwanBiobank_freq': 'FREQUENCY_2',
+            'pathogenicity_prediction': 'PATHOGENICITY_TOOL',
+            'conservation_prediction': 'CONSERVATION_TOOL'
+        }
+        for key, delexica_value in delexicalization.items():
+            if all(delexicalized_table[key] != con for con in ['.', '']):
+                if key in ['pathogenicity_prediction', 'conservation_prediction']:
+                    tmp_dict = {}
+                    i = 1
+                    for subtype in delexicalized_table[key].keys():
+                        if all(delexicalized_table[key][subtype] != con for con in ['.', '']):
+                            reversed_map[delexica_value+f"_{i}"] = subtype
+                            if type(delexicalized_table[key][subtype]) == dict:
+                                prefix = "SUBTYPE_"
+                                j = 1
+                                sub_dict = {}
+                                for k in delexicalized_table[key][subtype].keys():
+                                    reversed_map[prefix+f"{j}"] = k
+                                    sub_dict[prefix+f"{j}"] = delexicalized_table[key][subtype][k]
+                                    j += 1
+                                tmp_dict[delexica_value+f"_{i}"] = sub_dict
+                            else:
+                                tmp_dict[delexica_value+f"_{i}"] = delexicalized_table[key][subtype]
+                            i += 1
+
+                    delexicalized_table[key] = tmp_dict
+                else:
+                    reversed_map[delexica_value] = delexicalized_table[key]
+                    delexicalized_table[key] = delexica_value
+        for attr, delexicalized_value in zip([ 'changed_amino_acid', 'original_amino_acid_end', 'original_amino_acid_init'], ['CHANGED_AA', 'ORIGINAL_AA_END', 'ORIGINAL_AA_INIT']):
+            if table[attr][0] != '.':
+                replace_value = delexicalized_table[attr][0].replace('Ter/', '').replace('=/', '')
+                reversed_map[delexicalized_value] = replace_value
+                #delexicalized_table[attr] = delexicalized_value
+        for attr, delexicalized_value in zip(['original_position_init', 'original_position_end', 'changed_position'], ['ORIGINAL_POS_INIT', 'ORIGINAL_POS_END', 'CHANGED_POS']):
+            if all(table[attr] != con for con in ['.', '', '?']):
+                replace_value = ordinal_suffix(delexicalized_table[attr])
+                reversed_map[delexicalized_value] = replace_value
+        reversed_map['HGVSP'] = delexicalized_table['HGVSp']
+        return delexicalized_table, reversed_map
+
     def template_zhtw(self, table):
         """
             template-based report in Chinese
@@ -377,9 +441,8 @@ class GermlineVarSum:
             text_zhtw['conservation'] = ['']
         return text_zhtw
 
-    def template_enus(self, table):
+    def template_enus(self, table, delexicalized = False):
         text_enus = {}
-
         if table['gene_name'] != ".":
             if table['HGVSc'] == ".":
                 text_enus['gene_name'] = [f"A {table['genotype']} {table['consequence']} variant is detected in the {table['gene_name']} gene, "]
@@ -391,6 +454,11 @@ class GermlineVarSum:
                         tmp_position = 'between the ' + ' and the '.join([ordinal_suffix(pos) for pos in table['CDS_position'].split(', ')])
                 else:
                     tmp_position = 'at the ' + ordinal_suffix(table['CDS_position'])
+
+                if delexicalized:
+                    self.reversed_map['CDS_POS'] = tmp_position
+                    tmp_position = 'CDS_POS'
+                    self.delexicalized_table['CDS_position'] = 'CDS_POS'
             
                 text_enus['gene_name'] = [f"A {table['genotype']} {table['consequence']} variant ({table['HGVSc']}) is detected {tmp_position} nucleotide in {table['exon_or_intron_rank']} of the {table['gene_name']} gene ({table['reference']}). ",
                                             f"A {table['genotype']} {table['consequence']} variant ({table['HGVSc']}) has been identified {tmp_position} nucleotide in {table['exon_or_intron_rank']} of the {table['gene_name']} gene ({table['reference']}). ",
@@ -404,8 +472,21 @@ class GermlineVarSum:
         
 
         hgvsp_text =  self.hgvsp_parse.text
-        
-        text_enus['HGVSp'] = [hgvsp_text] # text from HGVSpParser
+        if delexicalized:
+            if self.table['HGVSp'] != '.':
+                hgvsp_text = hgvsp_text.split('(')[0] + '(HGVSP). '
+            for attr, delexical_value in zip([ 'changed_amino_acid', 'original_amino_acid_init', 'original_amino_acid_end'], ['CHANGED_AA', 'ORIGINAL_AA_INIT', 'ORIGINAL_AA_END']):
+                if self.table[attr][0] != '.':
+                    replace_value = self.table[attr][0].replace('Ter/', '').replace('=/', '')
+                    hgvsp_text = hgvsp_text.replace(replace_value, delexical_value, 1)
+            # for attr, delexical_value in zip(['original_position_init', 'original_position_end', 'changed_position'], ['ORIGINAL_POS_INIT', 'ORIGINAL_POS_END', 'CHANGED_POS']):
+            #     if all(self.table[attr] != con for con in ['.', '', '?']):
+            #         replace_value = ordinal_suffix(self.table[attr])
+            #         hgvsp_text = hgvsp_text.replace(replace_value, delexical_value, 1)
+        if delexicalized:
+            text_enus['HGVSp'] = ['HGVSP. ']
+        else:
+            text_enus['HGVSp'] = [hgvsp_text] # text from HGVSpParser
 
         text_enus['ClinVar_record'] = [f"This variant is recorded as '{table['ClinVar_record']}' in the ClinVar database. ",
                                          f"The ClinVar database records this variant as having '{table['ClinVar_record']}' status. ",
@@ -419,25 +500,25 @@ class GermlineVarSum:
                                          f"The '{table['ClinVar_record']}' classification is attributed to this variant in the ClinVar database. ",
                                          f"According to the ClinVar database, this variant falls under the category of '{table['ClinVar_record']}.' "]
         text_enus['hotspot'] = [f"This specific variant is situated within a hotspot region known for its strong association with high pathogenicity, as documented in {table['hotspot']}. ",
-                                  f"In {table['hotspot']}, this variant is found in a hotspot region recognized for its elevated pathogenicity.\n",
-                                  f"The {table['hotspot']} database identifies this variant as being positioned in a hotspot region known for its significant pathogenicity.\n",
-                                  f"Within {table['hotspot']}, this variant is situated in a hotspot region that is strongly linked to high pathogenicity.\n",
-                                  f"According to {table['hotspot']}, this variant is located in a hotspot region renowned for its pronounced pathogenicity.\n",
-                                  f"This variant is annotated in {table['hotspot']} as falling within a hotspot region with a high likelihood of pathogenicity.\n",
-                                  f"In {table['hotspot']}, this variant is documented as being part of a hotspot region linked to high pathogenicity.\n",
-                                  f"According to the data in {table['hotspot']}, this variant is positioned in a hotspot region known for its marked pathogenicity.\n",
-                                  f"The {table['hotspot']} database indicates that this variant is found in a hotspot region with a strong association with high pathogenicity.\n"]
-        text_enus['gnomAD_freq'] = [f"The allele frequency of this variant in the East Asian population is {table['gnomAD_freq']} based on the Genome Aggregation Database (gnomAD).",
-                                      f"According to data from the Genome Aggregation Database (gnomAD), the allele frequency of this variant in the East Asian population is {table['gnomAD_freq']}. ",
-                                      f"The Genome Aggregation Database (gnomAD) reports an allele frequency of {table['gnomAD_freq']} for this variant in the East Asian population. ",
-                                      f"Based on gnomAD data, this variant's allele frequency in the East Asian population is {table['gnomAD_freq']}, ",
-                                      f"The Genome Aggregation Database (gnomAD) indicates an allele frequency of {table['gnomAD_freq']} for this variant in the East Asian population. ",
-                                      f"As per the Genome Aggregation Database (gnomAD), the allele frequency of this variant in the East Asian population is {table['gnomAD_freq']}, ",
-                                      f"The allele frequency of this variant in the East Asian population is {table['gnomAD_freq']}, based on data from the Genome Aggregation Database (gnomAD). ",
-                                      f"In the East Asian population, this variant's allele frequency is {table['gnomAD_freq']}, as evidenced by data from the Genome Aggregation Database (gnomAD). ",
-                                      f"The Genome Aggregation Database (gnomAD) shows an allele frequency of {table['gnomAD_freq']} for this variant in the East Asian population. ",
-                                      f"According to data from the Genome Aggregation Database (gnomAD), the allele frequency of this variant is {table['gnomAD_freq']} in the East Asian population. ",
-                                      f"This variant's allele frequency in the East Asian population is {table['gnomAD_freq']}, as documented in the Genome Aggregation Database (gnomAD). "]
+                                  f"In {table['hotspot']}, this variant is found in a hotspot region recognized for its elevated pathogenicity. ",
+                                  f"The {table['hotspot']} database identifies this variant as being positioned in a hotspot region known for its significant pathogenicity. ",
+                                  f"Within {table['hotspot']}, this variant is situated in a hotspot region that is strongly linked to high pathogenicity. ",
+                                  f"According to {table['hotspot']}, this variant is located in a hotspot region renowned for its pronounced pathogenicity. ",
+                                  f"This variant is annotated in {table['hotspot']} as falling within a hotspot region with a high likelihood of pathogenicity. ",
+                                  f"In {table['hotspot']}, this variant is documented as being part of a hotspot region linked to high pathogenicity. ",
+                                  f"According to the data in {table['hotspot']}, this variant is positioned in a hotspot region known for its marked pathogenicity. ",
+                                  f"The {table['hotspot']} database indicates that this variant is found in a hotspot region with a strong association with high pathogenicity. "]
+        text_enus['gnomAD_freq'] = [f"The maximum allele frequency of this variant in all population is {table['gnomAD_freq']} based on the Genome Aggregation Database (gnomAD).",
+                                      f"According to data from the Genome Aggregation Database (gnomAD), The maximum allele frequency of this variant in all population is {table['gnomAD_freq']}. ",
+                                      f"The Genome Aggregation Database (gnomAD) reports a maximum allele frequency of {table['gnomAD_freq']} for this variant in all population. ",
+                                      f"Based on gnomAD data, this maximum variant's allele frequency in all population is {table['gnomAD_freq']}, ",
+                                      f"The Genome Aggregation Database (gnomAD) indicates a maximum allele frequency of {table['gnomAD_freq']} for this variant in all population. ",
+                                      f"As per the Genome Aggregation Database (gnomAD), The maximum allele frequency of this variant in all population is {table['gnomAD_freq']}, ",
+                                      f"The maximum allele frequency of this variant in all population is {table['gnomAD_freq']}, based on data from the Genome Aggregation Database (gnomAD). ",
+                                      f"In all population, the maximum variant's allele frequency is {table['gnomAD_freq']}, as evidenced by data from the Genome Aggregation Database (gnomAD). ",
+                                      f"The Genome Aggregation Database (gnomAD) shows a maximum allele frequency of {table['gnomAD_freq']} for this variant in all population. ",
+                                      f"According to data from the Genome Aggregation Database (gnomAD), the maximum allele frequency of this variant is {table['gnomAD_freq']} in all population. ",
+                                      f"This variant's maximum allele frequency in all population is {table['gnomAD_freq']}, as documented in the Genome Aggregation Database (gnomAD). "]
         text_enus['TaiwanBiobank_freq'] = [f"In the Taiwan BioBank, the allele frequency in the Taiwanese population is {table['TaiwanBiobank_freq']}.\n",
                                              f"Meanwhile, in the Taiwanese population recorded in the Taiwan BioBank, the allele frequency is {table['TaiwanBiobank_freq']}.\n",
                                              f"The Taiwanese population's allele frequency, as observed in the Taiwan BioBank, is {table['TaiwanBiobank_freq']}.\n",
@@ -449,6 +530,7 @@ class GermlineVarSum:
                                              f"In the Taiwanese population, recorded in the Taiwan BioBank, the allele frequency is {table['TaiwanBiobank_freq']}.\n",
                                              f"The allele frequency in the Taiwanese population, based on the Taiwan BioBank data, is {table['TaiwanBiobank_freq']}.\n",
                                              f"In the Taiwanese population recorded in the Taiwan BioBank, the allele frequency is {table['TaiwanBiobank_freq']}.\n"]
+        
         if table['pathogenicity'] == 'recorded':
             text_enus['pathogenicity'] = [f"The pathogenicity of the variant is predicted by multiple pathogenicity prediction software: ",
                                         f"Several pathogenicity prediction tools were utilized to assess the variant's pathogenicit: ",
@@ -469,25 +551,28 @@ class GermlineVarSum:
                               'PROVEAN': 'PROVEAN = D',
                               'DANN': 'the closer the DANN value is to 1',
                               'spliceAI': 'any of prediction from spliceAI higher than 0.5'}
-            pathogenicity_SW = table['pathogenicity_prediction'].keys()
+            pathogenicity_SW = table['pathogenicity_prediction'].keys() if delexicalized else self.pathogenicity_SW
             for key in pathogenicity_SW:
                 tmp = table['pathogenicity_prediction'][key]
                 if tmp != '.':
                     if type(tmp) == dict:
+                        #pred_ls.append(f"The {len(tmp)} predictions of {key} are " + ', '.join([f"{subtype} = {value}" for subtype, value in tmp.items()]))
                         pred_ls.append(f"The predictions of {key} are " + ', '.join([f"{subtype} = {value}" for subtype, value in tmp.items()]))
                     else:
                         pred_ls.append(f"{key} = {tmp}")
 
             tmp_prediction = ', '.join(pred_ls)
-
-            tmp_prediction += f" ({'; '.join([interpretation[key] for key in pathogenicity_SW if table['pathogenicity_prediction'][key] != '.'])}, the higher the pathogenicity is implied). "
+            if delexicalized:
+                tmp_prediction += ". "
+            else:
+                tmp_prediction += f" ({'; '.join([interpretation[key] for key in pathogenicity_SW if table['pathogenicity_prediction'][key] != '.'])}, the higher the pathogenicity is implied). "
             text_enus['pathogenicity'] = [text+tmp_prediction for text in text_enus['pathogenicity']]
         else:
             text_enus['pathogenicity'] = ['']
 
         if table['conservation'] == 'recorded': 
             pred_ls = []
-            conservation_SW = table['conservation_prediction'].keys()
+            conservation_SW = table['conservation_prediction'].keys() if delexicalized else self.conservation_SW
             for key in conservation_SW:
                 if table['conservation_prediction'][key] != '.':
                     pred_ls.append(f"{key} = {table['conservation_prediction'][key]}")
@@ -580,17 +665,16 @@ class GermlineVarSum:
                                         "此變異目前未在任何資料庫中被紀錄位於熱點區（hotspot region）之中。",
                                         "根據目前的資料庫資訊而言，無法斷定此變異位於熱點區（hotspot region）內。"]
         
-        self.text_na['gnomAD_freq'] = ["The allele frequency of this variant in the East Asian population wasn't reported in the Genome Aggregation Database (gnomAD). ",
-                                       "The Genome Aggregation Database (gnomAD) did not report the allele frequency of this variant in the East Asian population. ",
-                                       "In the Genome Aggregation Database (gnomAD), there is no recorded allele frequency for this variant in the East Asian population. ",
-                                       "The East Asian population's allele frequency for this variant was not included in the data available on the Genome Aggregation Database (gnomAD). ",
-                                       "There is no information on the allele frequency of this variant in the East Asian population within the Genome Aggregation Database (gnomAD). ",
-                                       "The Genome Aggregation Database (gnomAD) does not provide data on the allele frequency of this variant in the East Asian population. ",
-                                       "The East Asian population's allele frequency for this variant is missing from the Genome Aggregation Database (gnomAD). ",
-                                       "The Genome Aggregation Database (gnomAD) lacks information on the allele frequency of this variant in the East Asian population. ",
-                                       "In the Genome Aggregation Database (gnomAD), no data regarding the allele frequency of this variant in the East Asian population is available. ",
-                                       "This variant's allele frequency in the East Asian population is not reported within the Genome Aggregation Database (gnomAD). ",
-                                       "The East Asian population's allele frequency for this variant is not documented in the Genome Aggregation Database (gnomAD). "]
+        self.text_na['gnomAD_freq'] = ["The maximum allele frequency of this variant in the all populations wasn't reported in the Genome Aggregation Database (gnomAD). ",
+                                       "The Genome Aggregation Database (gnomAD) did not report the allele frequency of this variant in all population. ",
+                                       "In the Genome Aggregation Database (gnomAD), there is no recorded allele frequency for this variant in all population. ",
+                                       "There is no information on the allele frequency of this variant in all population within the Genome Aggregation Database (gnomAD). ",
+                                       "The Genome Aggregation Database (gnomAD) does not provide data on the allele frequency of this variant in all population. ",
+                                       "The allele frequency in all populations for this variant is missing from the Genome Aggregation Database (gnomAD). ",
+                                       "The Genome Aggregation Database (gnomAD) lacks information on the allele frequency of this variant in all population. ",
+                                       "In the Genome Aggregation Database (gnomAD), no data regarding the allele frequency of this variant in all population is available. ",
+                                       "This variant's allele frequency in all population is not reported within the Genome Aggregation Database (gnomAD). ",
+                                       "The allele frequency in all populations for this variant is not documented in the Genome Aggregation Database (gnomAD). "]
         self.text_na_zhtw['gnomAD_freq'] = ["在世界基因體計畫gnomAD資料庫未報導過此變異位點，", # NTUH
                                             "Genome Aggregation Database（gnomAD）中無此變異在東亞地區族群中的「對偶基因頻率」（allele frequency）紀錄；",
                                             "此變異在東亞地區族群中的「對偶基因頻率」（allele frequency）尚未紀錄於Genome Aggregation Database（gnomAD）中；",
@@ -642,28 +726,233 @@ class GermlineVarSum:
         self.report = {}
         self.report['En'] = ''
         self.report['Zh'] = ''
+        if self.delexicalized:
+            self.report['delexicalized_En'] = ''
+        
         attribute_out = attribute_out if attribute_out else self.text_zhtw.keys()
 
         for key in attribute_out:
             if key not in self.table.keys():
                  self.table[key] = '.'
-
+        
         for key in attribute_out:
             if self.table[key] == '.':
                 n = template_idx if template_idx != None else random.sample(list(range(len(self.text_na_zhtw[key]))),1)[0]
                 self.report['Zh'] += self.text_na_zhtw[key][n]
                 n = template_idx if template_idx != None else random.sample(list(range(len(self.text_na[key]))),1)[0]
                 self.report['En'] += self.text_na[key][n]
+                if self.delexicalized:
+                    self.report['delexicalized_En'] += self.text_na[key][n]
             else:
                 n = template_idx if template_idx != None else random.sample(list(range(len(self.text_zhtw[key]))),1)[0]
                 self.report['Zh'] += self.text_zhtw[key][n]
                 n = template_idx if template_idx != None else random.sample(list(range(len(self.text_enus[key]))),1)[0]
                 self.report['En'] += self.text_enus[key][n]
+                if self.delexicalized:
+                    self.report['delexicalized_En'] += self.text_enus_delexicalized[key][n]
 
         if self.lang in self.report.keys():
             return self.report[self.lang].replace("  ", " ").strip()
         else:
             return "The variant report is currently only available in Chinese ('Zh') and English ('En')."
+    
+    def extract_required_info(self, attribute_out = None):
+        table = self.table
+        attributes = self.shared_attributes
+        attribute_out = attribute_out if attribute_out else attributes
+        required_info = []
+        for attr in attribute_out:
+            if all(table[attr] != con for con in ['NA', '.', '']):
+                if attr in ['original_amino_acid_init', 'original_amino_acid_end', 'changed_amino_acid'] and type(table[attr]) == tuple:
+                    tmp_record = [word[0] for word in table[attr]]
+                    required_info += tmp_record
+                elif type(table[attr]) == dict:
+                    for key, value in table[attr].items():
+                        if type(value) == dict:
+                            tmp_record = np.array([[k,v] for k, v in value.items() if all(v != con for con in ['NA', '.', ''])])
+                            tmp_record = tmp_record.flatten().tolist()
+                            required_info.append(key)
+                            required_info += tmp_record
+                        else:
+                            if all(value != con for con in ['NA', '.', '']):
+                                required_info.append(key)
+                                required_info.append(value)
+                elif type(table[attr]) == list:
+                    tmp_record = np.array([[w.rstrip(';,') for w in word.split()] for word in table[attr]])
+                    tmp_record = tmp_record.flatten().tolist()
+                    required_info += tmp_record
+                else:
+                    tmp_record = [word.rstrip(';,') for word in table[attr].split()]
+                    required_info += tmp_record
+        return required_info
+
+    def generate_linear_raw(self, attribute_out = None):
+        attributes = ['Otherinfo_FORMAT-GT', 'VEP_VEP-refseq-Consequence', 'VEP_VEP-refseq-HGVSc', 'VEP_VEP-refseq-Gene-Name', 
+                      'VEP_VEP-ensembl-Transcript-ID', 'ANNOVAR_ANNOVAR-ensembl-Transcript-ID',
+                      'VEP_VEP-refseq-Exon-or-Intron-Rank', 'VEP_VEP-refseq-HGVSp', 'ClinVar_CLNSIG', 'pathogenicHotspot-ailabs_pathogenicHotspot',
+                      'gnomAD-Genomes_AF-popmax', 'TaiwanBiobank-official_Illumina1000-AF', 
+                      'Pathogenicity Scores_Ensembl-transcriptid', 'Pathogenicity Scores_SIFT-score', 'Pathogenicity Scores_Polyphen2-HVAR-score',
+                      'Pathogenicity Scores_VEST4-score', 'Pathogenicity Scores_PROVEAN-pred', 'CADD_PHRED', 'DANN_DANN-score', 
+                      'SpliceAI-SNV_DS-AG', 'SpliceAI-SNV_DS-AL', 'SpliceAI-SNV_DS-DG', 'SpliceAI-SNV_DS-DL', 
+                      'Conservation Scores_phyloP100way-vertebrate-rankscore']
+        attribute_out = attribute_out if attribute_out else attributes
+        linear_table = "<table> "
+        for attr in attribute_out:
+            if self.sample[attr] != ".":
+                linear_table += f"<cell> {self.sample[attr]} <header> {attr} </header> </cell> "
+            else:
+                linear_table += f"<cell> NA <header> {attr} </header> </cell> "
+        linear_table += "</table>"
+        return linear_table
+        
+    def generate_linear(self, version = 'v2', attribute_out = None, delexicalized = False):
+        # linear_table = "<table> "
+        attributes = self.shared_attributes
+        attribute_out = attribute_out if attribute_out else attributes
+        table = self.delexicalized_table if delexicalized else self.table
+        if version == 'v1':
+            linear_table = "<table> "
+            for attr in attribute_out:
+                if all(table[attr] != con for con in [".", '']):
+                    if attr in ['original_amino_acid_init', 'original_amino_acid_end', 'changed_amino_acid'] and len(table[attr]) == 2:
+                        linear_table += f"<cell> {table[attr][0]} <header> {attr} </header> </cell> " if table[attr][0] != '.' else f"<cell> NA <header> {attr} </header> </cell> "
+                    elif attr in ['pathogenicity_prediction', 'conservation_prediction']:
+                        for key in table[attr].keys():
+                            if type(table[attr][key]) == dict:
+                                tmp = ", ".join([f"{k}={v}" for k, v in table[attr][key].items()])
+                                linear_table += f"<cell> {key} = ({tmp}) <header> {attr} </header> </cell> "
+                            else:
+                                linear_table += f"<cell> {key} = NA <header> {attr} </header> </cell> " if table[attr][key] == '.' else f"<cell> {key} = {table[attr][key]} <header> {attr} </header> </cell> "
+                    else:
+                        linear_table += f"<cell> {table[attr]} <header> {attr} </header> </cell> "
+                else:
+                    linear_table += f"<cell> NA <header> {attr} </header> </cell> "
+            linear_table += "</table>"
+            return linear_table
+        
+        elif version == 'v2':
+            linear_table = []
+            for attr in attribute_out:
+                if all(table[attr] != con for con in [".", '']):
+                    if attr in ['original_amino_acid_init', 'original_amino_acid_end', 'changed_amino_acid'] and len(table[attr]) == 2:
+                        linear_table.append(f"{attr}[{table[attr][0]}]" if table[attr][0] != '.' else f"{attr}[NA]")
+                    elif attr in ['pathogenicity_prediction', 'conservation_prediction']:
+                        for key in table[attr].keys():
+                            if type(table[attr][key]) == dict:
+                                tmp = ", ".join([f"{k}={v}" for k, v in table[attr][key].items()])
+                                linear_table.append(f"{attr}[{key} = ({tmp})]")
+                            else:
+                                linear_table.append(f"{attr}[{key} = NA]" if table[attr][key] == '.' else f"{attr}[{key} = {table[attr][key]}]")
+                    else:
+                        linear_table.append(f"{attr}[{table[attr]}]")
+                else:
+                    linear_table.append(f"{attr}[NA]")
+
+            return ', '.join(linear_table)
+    
+    def generate_linear_sentence(self, attribute_out = None, delexicalized = False, generate_word_class = False):
+        table = self.delexicalized_table.copy() if delexicalized else self.table.copy()
+
+        attributes = self.shared_attributes
+        attribute_out = attribute_out if attribute_out else attributes
+
+        short_sentence = ''
+        for attr in attribute_out:
+            if table[attr] != "." and table[attr] != "":
+                if attr in ['original_amino_acid_init', 'original_amino_acid_end', 'changed_amino_acid'] and len(table[attr]) == 2:
+                    short_sentence += f"The {attr} is {table[attr][0]}. " if table[attr][0] != '.' else f"The {attr} is NA. "
+                elif type(table[attr]) == list:
+                    short_sentence += f"The {attr} is {', '.join(table[attr])}. "
+                elif type(table[attr]) == dict:
+                    tmp_ls = []
+                    for key in table[attr].keys():
+                        if type(table[attr][key]) == dict:
+                            tmp_ls += [f"The {attr} from {key}'s {subtype} is {value}. "  for subtype, value in table[attr][key].items() if value != '.']
+                        else:
+                            tmp_ls += [f"The {attr} from {key} is {table[attr][key]}. " if table[attr][key] != '.'  else f"The {attr} from {key} is NA. " ]
+                    short_sentence += ''.join(tmp_ls)
+                else:
+                    short_sentence += f"The {attr} is {table[attr]}. "
+
+            else:
+                short_sentence += f"The {attr} is NA. "
+
+        if generate_word_class:
+            required_info = self.extract_required_info()
+            short_sentence_split = short_sentence.split()
+            word_class = ['0']*len(short_sentence_split)
+            for i in range(len(short_sentence_split)):
+                if short_sentence_split[i].rstrip(';,].') in required_info:
+                    word_class[i] = '1'
+            return short_sentence.strip(), ",".join(word_class)
+
+        return short_sentence.strip()
+
+    def generate_table_input(self, attribute_out = None, linearized = False, delexicalized = False, generate_word_class = False):
+        table = self.delexicalized_table.copy() if delexicalized else self.table.copy()
+        # NA data preprocessing
+        for key, value in table.items():
+            if value == '.' or value == '':
+                table[key] = 'NA'
+        # check: premature termination
+        n_ter = False
+        for key in ['original_amino_acid_init', 'original_amino_acid_end', 'changed_amino_acid']:
+            if type(table[key]) == tuple:
+                table[key] = table[key][0] if table[key][0] != '.' else 'NA'
+                if re.search(r'^Ter/', table[key]):
+                    n_ter = True
+                    table[key] = table[key].split('Ter/')[-1]
+        table['ter'] = 'YES' if n_ter else 'NO'
+        
+        # output table
+        table_out = {}
+        table_out['GeneName'] = table['gene_name']
+        table_out['genotype'] = table['genotype']
+        table_out['Consequence'] = table['consequence']
+        table_out['HGVSc'] = f"annotation = {table['HGVSc']}, reference = {table['reference']}, position = {table['CDS_position']}, type_and_rank = {table['exon_or_intron_rank']}"
+        table_out['HGVSp'] = f"annotation = {table['HGVSp']}, functional_impact = {table['change_type']}, original_position_init = {table['original_position_init']}, original_amino_acid_init = {table['original_amino_acid_init']}, original_position_end = {table['original_position_end']}, original_amino_acid_end = {table['original_amino_acid_end']}, changed_position = {table['changed_position']}, changed_amino_acid = {table['changed_amino_acid']}, termination = {table['ter']}"
+        table_out['ClinVar'] = f"record = {table['ClinVar_record']}"
+        table_out['Hotspot'] = f"database = {table['hotspot']}"
+        table_out['AlleleFrequency'] = [f"from = {key.split('_')[0]}, score = {table[key]}" for key in ['gnomAD_freq', 'TaiwanBiobank_freq']]
+        table_out['PathogenicityPrediction'] = []
+        if table['pathogenicity'] != 'NA':
+            for key in table['pathogenicity_prediction'].keys():
+                tmp = table['pathogenicity_prediction'][key]
+                if type(tmp) == dict:
+                    for subtype, value in tmp.items():
+                        if value != '.':
+                            table_out['PathogenicityPrediction'] += [f"from = {key}, type = {subtype}, prediction = {value}"]
+                else:
+                    if tmp != '.':
+                        table_out['PathogenicityPrediction'] += [f"from = {key}, type = None, prediction = {tmp}"]
+                    #table_out['PathogenicityPrediction'] += [f"from = {key}, type = None, prediction = {tmp}" if tmp != '.' else f"from = {key}, type = None, prediction = NA"]
+        else:
+            table_out['PathogenicityPrediction'] = 'NA'
+        table_out['ConservationPredcition'] = [f"from = {key}, prediction = {table['conservation_prediction'][key]}" if table['conservation_prediction'][key] != '.' else f"from = {key}, prediction = NA" for key in table['conservation_prediction'].keys()]
+
+        # linearization
+        if linearized:
+            linear = ''
+            table_attribute_out = attribute_out if attribute_out else table_out.keys()
+            for key in table_attribute_out:
+                if type(table_out[key]) == str:
+                    linear += f"<{key}> {table_out[key]}; "  
+                else:
+                    tmp = ', '.join([f'[{text}]' for text in table_out[key]])
+                    linear += f"<{key}> {tmp}; "
+            # generate label for classifier
+            if generate_word_class:
+                required_info = self.extract_required_info()
+                linear_split = linear.split()
+                word_class = ['0']*len(linear_split)
+                for i in range(len(linear_split)):
+                    if linear_split[i].rstrip(';,]') in required_info:
+                        word_class[i] = '1'
+                return linear.strip(), ','.join(word_class)
+            return linear.strip()
+        return table_out
+
+
 
 class GermlineVarSum_annotator_2_2(GermlineVarSum):
     def __init__(self, sample, lang = 'Zh'):
@@ -898,8 +1187,8 @@ class GermlineVarSum_annotator_2_2(GermlineVarSum):
         text_zhtw['CGD_condition'] = [f"此變異位點於Candida Genome Database（CGD）資料庫有報導過，與{table['CGD_condition']}具有相關性。"]
         return text_zhtw
     
-    def template_enus(self, table):
-        text_enus = super().template_enus(table)
+    def template_enus(self, table, delexicalized=False):
+        text_enus = super().template_enus(table, delexicalized)
         text_enus['DNA_codon'] = [f"(DNA sequence from {table['DNA_codon'][0]} turn into {table['DNA_codon'][-1]})."]
         text_enus['uniprot_gene'] = [f"The UniProt protein database indicates that the protein translated from this gene is {table['uniprot_gene']}. "]
         text_enus['OMIM_disease'] = [f"The variant was reported in Online Mendelian Inheritance in Man (OMIM) which is associated with {table['OMIM_disease']}. "]
