@@ -1028,7 +1028,9 @@ class GDScore:
 
 class DiseaseToGene:
     def __init__(self, pubmedkb_gd_score=None, db_gvd_score=None):
-        self.group_to_score_range = [(1, 100), (101, 125)]
+        self._group_to_score_range = [(1, 100), (101, 125)]
+        self.max_raw_pubmedkbscore = 10000
+
         self.pubmedkb_gd_score = pubmedkb_gd_score
         self.db_gvd_score = db_gvd_score
         return
@@ -1045,7 +1047,61 @@ class DiseaseToGene:
         }
         return gene_to_score
 
-    def get_score(self, mesh_to_disease_set, disease_to_mesh_set):
+    def get_score(self, mesh_to_disease_set, _disease_to_mesh_set):
+        # normalize mesh ID format
+        clean_mesh_to_disease_set = defaultdict(lambda: set())
+        prefix = "MESH:"
+        for mesh, disease_set in mesh_to_disease_set.items():
+            if not mesh.startswith(prefix):
+                mesh = prefix + mesh
+            for disease in disease_set:
+                clean_mesh_to_disease_set[mesh].add(disease)
+        mesh_to_disease_set = clean_mesh_to_disease_set
+
+        # calculate score for each <disease, gene> pair
+        disease_gene_score = defaultdict(lambda: defaultdict(lambda: 0))
+        gene_disease_score = defaultdict(lambda: defaultdict(lambda: 0))
+
+        for mesh, disease_set in mesh_to_disease_set.items():
+            gene_to_dbscore = self.get_db_score(mesh)
+            gene_to_pubmedkbscore = self.get_pubmedkb_score(mesh)
+
+            for gene in gene_to_dbscore.keys() | gene_to_pubmedkbscore.keys():
+                # calculate <mesh, gene> score
+                dbscore = gene_to_dbscore.get(gene, 0)
+                if dbscore > 0:
+                    dbscore = 100
+
+                pubmedkbscore = gene_to_pubmedkbscore.get(gene, 0)
+                pubmedkbscore = 100 * pubmedkbscore / self.max_raw_pubmedkbscore
+
+                score = dbscore + pubmedkbscore
+
+                # update <disease, gene> score by <mesh, gene> score
+                for disease in disease_set:
+                    disease_gene_score[disease][gene] = max(score, disease_gene_score[disease][gene])
+
+        for disease, gene_to_score in disease_gene_score.items():
+            for gene, score in gene_to_score.items():
+                gene_disease_score[gene][disease] = score
+
+        # sorted gene_score_list
+        gene_to_score = {
+            gene: max(disease_to_score.values())
+            for gene, disease_to_score in gene_disease_score.items()
+        }
+        gene_score_list = sorted(gene_to_score.items(), key=lambda gs: -gs[1])
+        del gene_to_score
+
+        # sorted disease_to_gene_list
+        disease_to_gene_list = {
+            disease: sorted(gene_to_score, key=lambda g: -gene_to_score[g])
+            for disease, gene_to_score in disease_gene_score.items()
+        }
+
+        return gene_score_list, disease_to_gene_list, gene_disease_score
+
+    def _get_score(self, mesh_to_disease_set, disease_to_mesh_set):
         # normalize mesh ID format
         clean_mesh_to_disease_set = defaultdict(lambda: set())
         prefix = "MESH:"
@@ -1115,7 +1171,7 @@ class DiseaseToGene:
                 dbscore = gene_to_dbscore[gene]
                 group = 1 if dbscore > 0 else 0
 
-                score_min, score_max = self.group_to_score_range[group]
+                score_min, score_max = self._group_to_score_range[group]
                 score_range = score_max - score_min
                 score = score_min + score_range * pubmedkbscore / max_pubmedkbscore
                 gene_to_score[gene] = score

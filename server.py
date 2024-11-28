@@ -1970,7 +1970,7 @@ def get_term_mesh_mapping_for_disease_to_gene(query_mesh_list, query_term_list):
             if not query_mesh.startswith(prefix):
                 query_mesh = prefix + query_mesh
             name_list = mesh_name_kb.get_mesh_name_by_mesh_id(query_mesh)
-            name = name_list[0] if name_list else "-"
+            name = name_list[0] if name_list else query_mesh
             mesh_to_term[query_mesh].add(name)
             term_to_mesh[name].add(query_mesh)
 
@@ -1980,7 +1980,7 @@ def get_term_mesh_mapping_for_disease_to_gene(query_mesh_list, query_term_list):
                 if mesh in mesh_to_term:
                     continue
                 name_list = mesh_name_kb.get_mesh_name_by_mesh_id(mesh)
-                name = name_list[0] if name_list else "-"
+                name = name_list[0] if name_list else mesh
                 mesh_to_term[mesh].add(name)
                 term_to_mesh[name].add(mesh)
 
@@ -2010,36 +2010,36 @@ def run_disease_to_gene():
         logger.info(f"[query] disease={disease} mesh_set={mesh_set}")
 
     # show gene->score and gene->mesh
-    gene_score_list, disease_to_gene_list = disease_to_gene.get_score(mesh_to_disease, disease_to_mesh)
-
-    gene_to_disease = defaultdict(lambda: [])
-    for disease, gene_list in disease_to_gene_list.items():
-        for gene in gene_list:
-            gene_to_disease[gene].append(disease)
+    (
+        gene_score_list, disease_to_gene_list, gene_disease_score,
+    ) = disease_to_gene.get_score(mesh_to_disease, disease_to_mesh)
 
     width = 800
     table_html = f'<table style="width: {width}px;"><tr><th>Gene</th><th>Score</th><th>Disease</th></tr>'
     prefix = "MESH:"
 
-    for gene, score in gene_score_list:
+    for gene, g_score in gene_score_list:
         gene_name = ncbi_gene.id_to_name.get(gene, "-")
         gene_html = f'<a href="https://www.ncbi.nlm.nih.gov/gene/{gene}">[{html.escape(gene)}]</a> {html.escape(gene_name)}'
 
-        score_html = html.escape(f"{score:.1f}")
+        g_score_html = html.escape(f"{g_score:.1f}")
+        g_score_html = (10 - len(g_score_html) * 2) * "&nbsp;" + g_score_html
 
         disease_html_list = []
-        for disease in gene_to_disease[gene]:
+        for disease, dg_score in gene_disease_score[gene].items():
+            dg_score_html = html.escape(f"{dg_score:.1f}")
+            dg_score_html = (10 - len(dg_score_html) * 2) * "&nbsp;" + dg_score_html
             mesh_html_list = []
             for mesh in disease_to_mesh[disease]:
                 mesh = mesh[len(prefix):]
                 mesh_html = f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={mesh}">{html.escape(mesh)}</a>'
                 mesh_html_list.append(mesh_html)
             disease_html = html.escape(", ").join(mesh_html_list)
-            disease_html = f"[{disease_html}] {html.escape(disease)}"
+            disease_html = f"{dg_score_html} {html.escape(disease)} [{disease_html}]"
             disease_html_list.append(disease_html)
         disease_html = "<br />".join(disease_html_list)
 
-        table_html += f"<tr><td>{gene_html}</td><td>{score_html}</td><td>{disease_html}</td></tr>"
+        table_html += f"<tr><td>{gene_html}</td><td>{g_score_html}</td><td>{disease_html}</td></tr>"
     table_html += "</table>"
 
     response = {"result": table_html}
@@ -2070,9 +2070,12 @@ def query_disease_to_gene():
     for disease, mesh_set in disease_to_mesh.items():
         logger.info(f"[query] disease={disease} mesh_set={mesh_set}")
 
-    # get (gene, name) -> score and (disease, mesh_list) -> [(gene, name), ...]
-    gene_score_list, disease_to_gene_list = disease_to_gene.get_score(mesh_to_disease, disease_to_mesh)
+    # query the score of each <disease, gene> pair
+    (
+        gene_score_list, disease_to_gene_list, gene_disease_score,
+    ) = disease_to_gene.get_score(mesh_to_disease, disease_to_mesh)
 
+    # (gene, name) -> score
     gene_to_name = {}
     gene_name_score_list = []
     for gene, score in gene_score_list:
@@ -2081,6 +2084,7 @@ def query_disease_to_gene():
         gene_name_score_list.append(((gene, name), f"{score:.1f}"))
     gene_score_list = gene_name_score_list
 
+    # (disease, mesh_list) -> [(gene, name), ...]
     disease_gene_list = []
     for disease, gene_list in disease_to_gene_list.items():
         mesh_set = disease_to_mesh[disease]
@@ -2098,6 +2102,7 @@ def query_disease_to_gene():
 
     response["gene_score_list"] = gene_score_list
     response["disease_gene_list"] = disease_gene_list
+    response["gene_disease_score"] = gene_disease_score
     return json.dumps(response)
 
 
