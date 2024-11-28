@@ -2082,7 +2082,6 @@ def query_disease_to_gene():
         name = ncbi_gene.id_to_name.get(gene, "-")
         gene_to_name[gene] = name
         gene_name_score_list.append(((gene, name), f"{score:.1f}"))
-    gene_score_list = gene_name_score_list
 
     # (disease, mesh_list) -> [(gene, name), ...]
     disease_gene_list = []
@@ -2100,9 +2099,20 @@ def query_disease_to_gene():
 
         disease_gene_list.append(((disease, mesh_list), gene_list))
 
-    response["gene_score_list"] = gene_score_list
+    # (gene, name) -> [(disease, score), ...]
+    gene_disease_score_list = []
+    for gene, _score in gene_score_list:
+        gene_disease_score_list.append([
+            (gene, gene_to_name[gene]),
+            [
+                (disease, f"{score:.1f}")
+                for disease, score in gene_disease_score[gene].items()
+            ]
+        ])
+
+    response["gene_score_list"] = gene_name_score_list
     response["disease_gene_list"] = disease_gene_list
-    response["gene_disease_score"] = gene_disease_score
+    response["gene_disease_score_list"] = gene_disease_score_list
     return json.dumps(response)
 
 
