@@ -1696,7 +1696,7 @@ def run_gvd_stats():
         return cell
 
     def get_string_score(_score):
-        return f"{_score / 100:.1f}"
+        return f"{_score / 100:.2f}"
 
     if _type == "gd":
         score = gd_score.query_data("gd", arg_gene_id, arg_disease_id)
@@ -2022,13 +2022,13 @@ def run_disease_to_gene():
         gene_name = ncbi_gene.id_to_name.get(gene, "-")
         gene_html = f'<a href="https://www.ncbi.nlm.nih.gov/gene/{gene}">[{html.escape(gene)}]</a> {html.escape(gene_name)}'
 
-        g_score_html = html.escape(f"{g_score:.1f}")
-        g_score_html = (10 - len(g_score_html) * 2) * "&nbsp;" + g_score_html
+        g_score_html = html.escape(f"{g_score:.2f}")
+        g_score_html = (12 - len(g_score_html) * 2) * "&nbsp;" + g_score_html
 
         disease_html_list = []
         for disease, dg_score in gene_disease_score[gene].items():
-            dg_score_html = html.escape(f"{dg_score:.1f}")
-            dg_score_html = (10 - len(dg_score_html) * 2) * "&nbsp;" + dg_score_html
+            dg_score_html = html.escape(f"{dg_score:.2f}")
+            dg_score_html = (12 - len(dg_score_html) * 2) * "&nbsp;" + dg_score_html
             mesh_html_list = []
             for mesh in disease_to_mesh[disease]:
                 mesh = mesh[len(prefix):]
@@ -2081,7 +2081,7 @@ def query_disease_to_gene():
     for gene, score in gene_score_list:
         name = ncbi_gene.id_to_name.get(gene, "-")
         gene_to_name[gene] = name
-        gene_name_score_list.append(((gene, name), f"{score:.1f}"))
+        gene_name_score_list.append(((gene, name), f"{score:.2f}"))
 
     # (disease, mesh_list) -> [(gene, name), ...]
     disease_gene_list = []
@@ -2105,7 +2105,7 @@ def query_disease_to_gene():
         gene_disease_score_list.append([
             (gene, gene_to_name[gene]),
             [
-                (disease, f"{score:.1f}")
+                (disease, f"{score:.2f}")
                 for disease, score in gene_disease_score[gene].items()
             ]
         ])
