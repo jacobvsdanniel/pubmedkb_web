@@ -1521,7 +1521,7 @@ class QA:
     def load_data(self):
         retriv.set_base_path(self.retriv_dir)
         logger.info(f"[qa] loading retriv index ...")
-        self.retriever = DenseRetriever.load("dense_dgp")
+        self.retriever = DenseRetriever.load("dense_dgp_2025")
         logger.info("[qa] done loading retriv index")
         return
 
@@ -1635,10 +1635,10 @@ class QA:
         logger.info(f"{len(result_list):,} filtered_results: {pmids:,} pmids; {triplets:,} triplets;")
 
         if result_list:
-            answer_text = run_qa(question, "gpt-3.5-turbo", "", 1000)
-            answer_completion = run_qka_stream(question, answer_text, result_list, "gpt-4", "", 7000)
+            answer_text = run_qa(question, "gpt-4o", "", 1000)
+            answer_completion = run_qka_stream(question, answer_text, result_list, "gpt-4o", "", 7000)
         else:
-            answer_completion = run_qa_stream(question, "gpt-4", "", 1000)
+            answer_completion = run_qa_stream(question, "gpt-4o", "", 1000)
         return answer_completion, p_set
 
     async def async_query(self, question, d_set, g_set, v_set):
@@ -1646,7 +1646,7 @@ class QA:
 
         # parametric answering
         async_qa_task = asyncio.create_task(
-            async_run_qa(question, "gpt-3.5-turbo", "", 1000)
+            async_run_qa(question, "gpt-4o", "", 1000)
         )
         await asyncio.sleep(0)
 
@@ -1708,17 +1708,17 @@ class QA:
             async_gpt_task = await async_qa_task
             task_datum = await async_gpt_task
             answer_text = task_datum.text_out_list[0]
-            answer_completion = run_qka_stream(question, answer_text, result_list, "gpt-4", "", 7000)
+            answer_completion = run_qka_stream(question, answer_text, result_list, "gpt-4o", "", 7000)
 
         else:
             async_qa_task.cancel()
-            answer_completion = run_qa_stream(question, "gpt-4", "", 1000)
+            answer_completion = run_qa_stream(question, "gpt-4o", "", 1000)
 
         return answer_completion, p_set
 
 
 def run_paper_qa(question, paper_list):
-    completion = run_pqa_stream(question, paper_list, "gpt-4", "", 7000)
+    completion = run_pqa_stream(question, paper_list, "gpt-4o", "", 7000)
     return completion
 
 
