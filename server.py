@@ -17,6 +17,7 @@ from kb_utils import GVDScore, GDScore, DiseaseToGene
 from kb_utils import MESHNameKB, MESHGraph, MESHChemical, ChemicalDiseaseKB
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from kb_utils import get_paper_meta_html
+from kb_utils import CGDInferenceKB
 from summary_utils import Summary
 from VarSum_germline import GermlineVarSum
 try:
@@ -60,6 +61,7 @@ mesh_graph = MESHGraph(None)
 mesh_chemical = MESHChemical(None)
 chemical_disease_kb = ChemicalDiseaseKB(None)
 qa = QA(None)
+cgd_inference_kb = CGDInferenceKB(None)
 kb_type = None
 show_aid = False
 
@@ -167,6 +169,11 @@ def serve_question_to_paper():
 @app.route("/qa")
 def serve_qa():
     return render_template("qa.html")
+
+
+@app.route("/cgd_drug_discovery")
+def serve_cgd_drug_discovery():
+    return render_template("cgd_drug_discovery.html")
 
 
 @app.route("/yolo")
@@ -3139,6 +3146,136 @@ def query_chemical_disease_qa():
     return json.dumps(response)
 
 
+@app.route("/run_cgd_drug_discovery", methods=["GET", "POST"])
+def run_cgd_drug_discovery():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[run_cgd_drug_discovery:query] {query}")
+
+    c_list = query.get("chemical_list")
+    d_list = query.get("disease_list")
+    max_cds = query.get("max_cds")
+    max_cgds_per_cd = query.get("max_cgds_per_cd")
+    max_pmids_per_cg_gd = query.get("max_pmids_per_cg_gd")
+
+    # KB query result
+    all_cds, cd_data = cgd_inference_kb.query(
+        c_list=c_list,
+        d_list=d_list,
+        max_cds=max_cds,
+        max_cgds_per_cd=max_cgds_per_cd,
+        max_pmids_per_cg_gd=max_pmids_per_cg_gd,
+    )
+    logger.info(f"[run_cgd_drug_discovery] all_cds={all_cds:,}")
+    returned_cds = len(cd_data)
+    logger.info(f"[run_cgd_drug_discovery] returned_cds={returned_cds:,}")
+
+    # result table
+    html_rank = html.escape(f"Top {returned_cds:,}/{all_cds:,}")
+    html_cgds = html.escape("#Genes")
+    html_cgd = html.escape(f"Gene paths (top {max_cgds_per_cd:,})")
+
+    html_table = (f'<table><tr>'
+                  f'<th>{html_rank}</th>'
+                  f'<th>Score</th>'
+                  f'<th>Chemical</th>'
+                  f'<th>Disease</th>'
+                  f'<th>{html_cgds}</th>'
+                  f'<th>{html_cgd}</th>'
+                  f'</tr>')
+
+    html_large_break = '<br style="display: block; content: \' \'; margin-top: 10px;" />'
+
+    for rank, (c, d, cd_score, all_cgds, cgd_data) in enumerate(cd_data):
+        html_rank = html.escape(f"#{rank + 1}")
+        html_cd_score = html.escape(cd_score)
+        html_c = f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={c}">Chemical:{c}</a>'
+        html_d = f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={d}">Disease:{d}</a>'
+        html_cgds = html.escape(f"{all_cgds:,}")
+
+        html_path_list = []
+        for cgd_datum in cgd_data:
+            (
+                g, cgd_score,
+                cg_relation, gd_relation,
+                all_cg_pmids, all_gd_pmids,
+                cg_pmid_list, gd_pmid_list,
+            ) = cgd_datum
+            html_g = f'<a href="https://www.ncbi.nlm.nih.gov/gene/{g}">[Gene:{g}]</a>'
+            html_cgd_score = html.escape(f"score {cgd_score}")
+            html_cg = html.escape(f"{cg_relation} CG ({all_cg_pmids:,} papers):")
+            html_gd = html.escape(f"{gd_relation} GD ({all_gd_pmids:,} papers):")
+            html_cg_pmid = "&nbsp;&nbsp;".join(
+                f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">PMID:{pmid}</a>'
+                for pmid in cg_pmid_list
+            )
+            html_gd_pmid = "&nbsp;&nbsp;".join(
+                f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">PMID:{pmid}</a>'
+                for pmid in gd_pmid_list
+            )
+            html_path = (
+                f"{html_g} {html_cgd_score}<br />"
+                f"{html_cg}&nbsp;&nbsp;{html_cg_pmid}<br />"
+                f"{html_gd}&nbsp;&nbsp;{html_gd_pmid}"
+            )
+            html_path_list.append(html_path)
+        html_cgd_data = html_large_break.join(html_path_list)
+
+        html_table += (f"<tr>"
+                       f"<td>{html_rank}</td>"
+                       f"<td>{html_cd_score}</td>"
+                       f"<td>{html_c}</td>"
+                       f"<td>{html_d}</td>"
+                       f"<td>{html_cgds}</td>"
+                       f"<td>{html_cgd_data}</td>"
+                       f"</tr>")
+
+    html_table += "</table>"
+    logger.info(f"[run_cgd_drug_discovery] result table created")
+
+    response = {"result": html_table}
+    return json.dumps(response)
+
+
+@app.route("/query_cgd_drug_discovery", methods=["GET", "POST"])
+def query_cgd_drug_discovery():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[query_cgd_drug_discovery:query] {query}")
+
+    c_list = query.get("chemical_list")
+    d_list = query.get("disease_list")
+    max_cds = query.get("max_cds")
+    max_cgds_per_cd = query.get("max_cgds_per_cd")
+    max_pmids_per_cg_gd = query.get("max_pmids_per_cg_gd")
+
+    # KB query result
+    all_cds, cd_data = cgd_inference_kb.query(
+        c_list=c_list,
+        d_list=d_list,
+        max_cds=max_cds,
+        max_cgds_per_cd=max_cgds_per_cd,
+        max_pmids_per_cg_gd=max_pmids_per_cg_gd,
+    )
+    logger.info(f"[query_cgd_drug_discovery] all_cds={all_cds:,}")
+    returned_cds = len(cd_data)
+    logger.info(f"[query_cgd_drug_discovery] returned_cds={returned_cds:,}")
+
+    # result
+    response = {
+        "query": query,
+        "all_cds": all_cds,
+        "cd_data": cd_data,
+    }
+    return json.dumps(response)
+
+
 @app.route("/run_yolo", methods=["GET", "POST"])
 def run_yolo():
     # query
@@ -3195,6 +3332,7 @@ class Arg:
         self.chemical_nen_dir = raw_arg.get("chemical_nen_dir")
         self.chemical_disease_dir = raw_arg.get("chemical_disease_dir")
         self.retriv_dir = raw_arg.get("retriv_dir")
+        self.cgd_inference_kb_dir = raw_arg.get("cgd_inference_kb_dir")
         self.kb_type = raw_arg.get("kb_type")
         self.kb_dir = raw_arg.get("kb_dir")
         self.show_aid = raw_arg.get("show_aid", "false")
@@ -3275,6 +3413,10 @@ def main():
     if arg.retriv_dir:
         global qa
         qa = QA(arg.retriv_dir)
+
+    if arg.cgd_inference_kb_dir:
+        global cgd_inference_kb
+        cgd_inference_kb = CGDInferenceKB(arg.cgd_inference_kb_dir)
 
     if True:
         global show_aid

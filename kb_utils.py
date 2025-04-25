@@ -4,6 +4,7 @@ import sys
 import html
 import json
 import heapq
+import pickle
 import asyncio
 import difflib
 import logging
@@ -1715,6 +1716,132 @@ class QA:
             answer_completion = run_qa_stream(question, "gpt-4o", "", 1000)
 
         return answer_completion, p_set
+
+
+class CGDInferenceKB:
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self.c_d_score_pathlist_list = []
+        self.c_d_index = defaultdict(lambda: {})
+        self.d_c_index = defaultdict(lambda: {})
+        self.c_g_relationpmidlist = {}
+        self.g_d_relationpmidlist = {}
+
+        if data_dir:
+            self.load_data()
+        return
+
+    def load_data(self):
+        prefix = "[CGD Inference KB]"
+
+        # C -> G -> (relation, pmid_list)
+        # G -> D -> (relation, pmid_list)
+        logger.info(f"{prefix} reading CG and GD papers...")
+        for type_pair in ["CG", "GD"]:
+            type_1, type_2 = type_pair[0], type_pair[1]
+            e1_e2_relation_pmidlist_file = os.path.join(self.data_dir, f"{type_pair}_pmid_list.csv")
+            e1_e2_relationpmidlist = defaultdict(lambda: {})
+
+            with open(e1_e2_relation_pmidlist_file, "r", encoding="utf8", newline="") as f:
+                reader = csv.reader(f, dialect="csv")
+                header = next(reader)
+                assert header == [type_1, type_2, "correlation", "PMID"]
+                for e1, e2, relation, pmid_list_string in reader:
+                    pmid_list = pmid_list_string.split("|")
+                    e1_e2_relationpmidlist[e1][e2] = (relation, pmid_list)
+
+            pairs = sum(
+                len(e2_to_relationpmidlist) for _e1, e2_to_relationpmidlist in e1_e2_relationpmidlist.items()
+            )
+            logger.info(f"{prefix} read PMIDs for {pairs:,} {type_pair}")
+            if type_pair == "CG":
+                self.c_g_relationpmidlist = e1_e2_relationpmidlist
+            else:
+                self.g_d_relationpmidlist = e1_e2_relationpmidlist
+
+        # [(C, D, cd_score, path_list), ...]
+        # C -> D -> index
+        # D -> C -> index
+        c_d_score_pathlist_list_file = os.path.join(self.data_dir, f"CD.csv")
+        logger.info(f"{prefix} reading CD scores and CGD paths...")
+        with open(c_d_score_pathlist_list_file, "r", encoding="utf8", newline="") as f:
+            reader = csv.reader(f, dialect="csv")
+            header = next(reader)
+            assert header == ["C", "D", "score", "inference_path_list"]
+            for c, d, cd_score, path_list in reader:
+                path_list = [
+                    g_cgdscore.split(":")
+                    for g_cgdscore in path_list.split("|")
+                ]
+                self.c_d_score_pathlist_list.append((c, d, cd_score, path_list))
+        cds = len(self.c_d_score_pathlist_list)
+        logger.info(f"{prefix} read {cds:,} CDs")
+        for i, (c, d, _cd_score, _path_list) in enumerate(self.c_d_score_pathlist_list):
+            self.c_d_index[c][d] = i
+            self.d_c_index[d][c] = i
+        return
+
+    def query(self, c_list=None, d_list=None, max_cds=None, max_cgds_per_cd=None, max_pmids_per_cg_gd=None):
+        # default arguments
+        if c_list is None:
+            c_list = []
+        if d_list is None:
+            d_list = []
+        if max_cds is None:
+            max_cds = 10
+        if max_cgds_per_cd is None:
+            max_cgds_per_cd = 10
+        if max_pmids_per_cg_gd is None:
+            max_pmids_per_cg_gd = 3
+
+        # retrieve CD data indices
+        index_list = []
+        if c_list:
+            if d_list:
+                for c in c_list:
+                    for d in d_list:
+                        index = self.c_d_index.get(c, {}).get(d, None)
+                        if index is not None:
+                            index_list.append(index)
+            else:
+                for c in c_list:
+                    for _d, index in self.c_d_index.get(c, {}).items():
+                        index_list.append(index)
+        else:
+            if d_list:
+                for d in d_list:
+                    for _c, index in self.d_c_index.get(d, {}).items():
+                        index_list.append(index)
+
+        # sort index list
+        #   CD data should have been sorted by score
+        all_cds = len(index_list)
+        if max_cds < all_cds / 4:
+            index_list = heapq.nsmallest(max_cds, index_list)
+        else:
+            index_list = sorted(index_list)[:max_cds]
+
+        # collect data
+        #   path data should have been sorted by score
+        cd_data = []
+        for index in index_list:
+            c, d, cd_score, pathlist = self.c_d_score_pathlist_list[index]
+            all_cgds = len(pathlist)
+            cgd_data = []
+            for g, cgd_score in pathlist[:max_cgds_per_cd]:
+                cg_relation, cg_pmid_list = self.c_g_relationpmidlist[c][g]
+                gd_relation, gd_pmid_list = self.g_d_relationpmidlist[g][d]
+                all_cg_pmids = len(cg_pmid_list)
+                all_gd_pmids = len(gd_pmid_list)
+                cgd_data.append((
+                    g, cgd_score,
+                    cg_relation, gd_relation,
+                    all_cg_pmids, all_gd_pmids,
+                    cg_pmid_list[:max_pmids_per_cg_gd], gd_pmid_list[:max_pmids_per_cg_gd]
+                ))
+            cd_data.append((c, d, cd_score, all_cgds, cgd_data))
+
+        return all_cds, cd_data
 
 
 def run_paper_qa(question, paper_list):
