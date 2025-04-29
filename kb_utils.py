@@ -4,7 +4,6 @@ import sys
 import html
 import json
 import heapq
-import pickle
 import asyncio
 import difflib
 import logging
@@ -488,6 +487,86 @@ class NCBIGene:
                 if len(id_list) == 1:
                     self.alias_to_id[alias] = id_list[0]
         return
+
+
+class Gene:
+    def __init__(self, gene_id="", symbol="", tax_id="", taxon=""):
+        self.gene_id = gene_id
+        self.symbol = symbol
+        self.tax_id = tax_id
+        self.taxon = taxon
+        return
+
+    def get_json(self):
+        return {
+            "gene_id": self.gene_id,
+            "symbol": self.symbol,
+            "tax_id": self.tax_id,
+            "taxon": self.taxon,
+        }
+
+    def get_html_anchor(self):
+        if self.symbol:
+            html_symbol = html.escape(self.symbol)
+            if self.taxon:
+                html_l = html.escape("[")
+                html_r = html.escape("]")
+                html_taxon = html.escape(self.taxon)
+                html_result = (
+                    f'<a href="https://www.ncbi.nlm.nih.gov/gene/{self.gene_id}">'
+                    f'{html_symbol} {html_l} <i>{html_taxon}</i> {html_r}'
+                    f'</a>'
+                )
+            else:
+                html_result = (
+                    f'<a href="https://www.ncbi.nlm.nih.gov/gene/{self.gene_id}">'
+                    f'{html_symbol}'
+                    f'</a>'
+                )
+        else:
+            html_result = (
+                f'<a href="https://www.ncbi.nlm.nih.gov/gene/{self.gene_id}">'
+                f'GENE:{self.gene_id}'
+                f'</a>'
+            )
+        return html_result
+
+
+class NCBIGene2025:
+    def __init__(self, gene_dir):
+        self.geneid_to_taxid_symbol = {}
+        self.taxid_to_name = {}
+
+        if gene_dir:
+            # gene data
+            gene_file = os.path.join(gene_dir, "taxid_geneid_symbol.csv")
+            logger.info(f"reading {gene_file}")
+            with open(gene_file, "r", encoding="utf8", newline="") as f:
+                reader = csv.reader(f, dialect="csv")
+                header = next(reader)
+                assert header == ["taxonomy_id", "gene_id", "gene_symbol"]
+                for tax_id, gene_id, symbol in reader:
+                    self.geneid_to_taxid_symbol[gene_id] = (tax_id, symbol)
+            gene_ids = len(self.geneid_to_taxid_symbol)
+            logger.info(f"read {gene_ids:,} gene_ids")
+
+            # taxonomy data
+            taxonomy_file = os.path.join(gene_dir, "taxid_taxon.csv")
+            logger.info(f"reading {taxonomy_file}")
+            with open(taxonomy_file, "r", encoding="utf8", newline="") as f:
+                reader = csv.reader(f, dialect="csv")
+                header = next(reader)
+                assert header == ["taxonomy_id", "scientific_name"]
+                for tax_id, name in reader:
+                    self.taxid_to_name[tax_id] = name
+            tax_ids = len(self.taxid_to_name)
+            logger.info(f"read {tax_ids:,} tax_ids")
+        return
+
+    def query(self, gene_id):
+        tax_id, symbol = self.geneid_to_taxid_symbol.get(gene_id, ("", ""))
+        taxon = self.taxid_to_name.get(tax_id, "")
+        return Gene(gene_id=gene_id, symbol=symbol, tax_id=tax_id, taxon=taxon)
 
 
 class VariantNEN:

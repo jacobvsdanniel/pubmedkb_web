@@ -18,6 +18,7 @@ from kb_utils import MESHNameKB, MESHGraph, MESHChemical, ChemicalDiseaseKB
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from kb_utils import get_paper_meta_html
 from kb_utils import CGDInferenceKB
+from kb_utils import NCBIGene2025
 from summary_utils import Summary
 from VarSum_germline import GermlineVarSum
 try:
@@ -62,6 +63,7 @@ mesh_chemical = MESHChemical(None)
 chemical_disease_kb = ChemicalDiseaseKB(None)
 qa = QA(None)
 cgd_inference_kb = CGDInferenceKB(None)
+ncbi_gene_2025 = NCBIGene2025(None)
 kb_type = None
 show_aid = False
 
@@ -174,6 +176,11 @@ def serve_qa():
 @app.route("/cgd_drug_discovery")
 def serve_cgd_drug_discovery():
     return render_template("cgd_drug_discovery.html")
+
+
+@app.route("/ncbi_gene")
+def serve_ncbi_gene():
+    return render_template("ncbi_gene.html")
 
 
 @app.route("/yolo")
@@ -3204,22 +3211,31 @@ def run_cgd_drug_discovery():
                 all_cg_pmids, all_gd_pmids,
                 cg_pmid_list, gd_pmid_list,
             ) = cgd_datum
-            html_g = f'<a href="https://www.ncbi.nlm.nih.gov/gene/{g}">[Gene:{g}]</a>'
+            gene = ncbi_gene_2025.query(g)
+            html_g = gene.get_html_anchor()
             html_cgd_score = html.escape(f"score {cgd_score}")
-            html_cg = html.escape(f"{cg_relation} CG ({all_cg_pmids:,} papers):")
-            html_gd = html.escape(f"{gd_relation} GD ({all_gd_pmids:,} papers):")
-            html_cg_pmid = "&nbsp;&nbsp;".join(
+            cg_papers_string = "papers" if all_cg_pmids > 1 else "paper"
+            html_cg = (
+                    html.escape(cg_relation) + "&nbsp;CG&nbsp;"
+                    + html.escape(f"({all_cg_pmids:,}") + "&nbsp;" + html.escape(f"{cg_papers_string}):")
+            )
+            gd_papers_string = "papers" if all_gd_pmids > 1 else "paper"
+            html_gd = (
+                    html.escape(gd_relation) + "&nbsp;GD&nbsp;"
+                    + html.escape(f"({all_gd_pmids:,}") + "&nbsp;" + html.escape(f"{gd_papers_string}):")
+            )
+            html_cg_pmid = "&nbsp; ".join(
                 f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">PMID:{pmid}</a>'
                 for pmid in cg_pmid_list
             )
-            html_gd_pmid = "&nbsp;&nbsp;".join(
+            html_gd_pmid = "&nbsp; ".join(
                 f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">PMID:{pmid}</a>'
                 for pmid in gd_pmid_list
             )
             html_path = (
-                f"{html_g} {html_cgd_score}<br />"
-                f"{html_cg}&nbsp;&nbsp;{html_cg_pmid}<br />"
-                f"{html_gd}&nbsp;&nbsp;{html_gd_pmid}"
+                f"{html_g}&nbsp;{html_cgd_score}<br />"
+                f"{html_cg}&nbsp; {html_cg_pmid}<br />"
+                f"{html_gd}&nbsp; {html_gd_pmid}"
             )
             html_path_list.append(html_path)
         html_cgd_data = html_large_break.join(html_path_list)
@@ -3272,6 +3288,46 @@ def query_cgd_drug_discovery():
         "query": query,
         "all_cds": all_cds,
         "cd_data": cd_data,
+    }
+    return json.dumps(response)
+
+
+@app.route("/run_ncbi_gene", methods=["GET", "POST"])
+def run_ncbi_gene():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[run_ncbi_gene:query] {query}")
+
+    gene_id = query.get("gene_id")
+    gene = ncbi_gene_2025.query(gene_id)
+    logger.info(f"[run_ncbi_gene] symbol={gene.symbol} taxon={gene.taxon}")
+
+    html_result = gene.get_html_anchor()
+    response = {"result": html_result}
+    return json.dumps(response)
+
+
+@app.route("/query_ncbi_gene", methods=["GET", "POST"])
+def query_ncbi_gene():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[run_ncbi_gene:query] {query}")
+
+    gene_id = query.get("gene_id")
+    gene = ncbi_gene_2025.query(gene_id)
+    gene_json = gene.get_json()
+    logger.info(f"[run_ncbi_gene] gene={gene_json}")
+
+    # result
+    response = {
+        "query": query,
+        "gene": gene_json,
     }
     return json.dumps(response)
 
@@ -3333,6 +3389,7 @@ class Arg:
         self.chemical_disease_dir = raw_arg.get("chemical_disease_dir")
         self.retriv_dir = raw_arg.get("retriv_dir")
         self.cgd_inference_kb_dir = raw_arg.get("cgd_inference_kb_dir")
+        self.gene_2025_dir = raw_arg.get("gene_2025_dir")
         self.kb_type = raw_arg.get("kb_type")
         self.kb_dir = raw_arg.get("kb_dir")
         self.show_aid = raw_arg.get("show_aid", "false")
@@ -3417,6 +3474,10 @@ def main():
     if arg.cgd_inference_kb_dir:
         global cgd_inference_kb
         cgd_inference_kb = CGDInferenceKB(arg.cgd_inference_kb_dir)
+
+    if arg.gene_2025_dir:
+        global ncbi_gene_2025
+        ncbi_gene_2025 = NCBIGene2025(arg.gene_2025_dir)
 
     if True:
         global show_aid
