@@ -1,6 +1,7 @@
 import os
 import csv
 import sys
+import copy
 import html
 import json
 import heapq
@@ -540,7 +541,7 @@ class NCBIGene2025:
         if gene_dir:
             # gene data
             gene_file = os.path.join(gene_dir, "taxid_geneid_symbol.csv")
-            logger.info(f"reading {gene_file}")
+            logger.info(f"[NCBI gene 2025] reading {gene_file}")
             with open(gene_file, "r", encoding="utf8", newline="") as f:
                 reader = csv.reader(f, dialect="csv")
                 header = next(reader)
@@ -548,11 +549,11 @@ class NCBIGene2025:
                 for tax_id, gene_id, symbol in reader:
                     self.geneid_to_taxid_symbol[gene_id] = (tax_id, symbol)
             gene_ids = len(self.geneid_to_taxid_symbol)
-            logger.info(f"read {gene_ids:,} gene_ids")
+            logger.info(f"[NCBI gene 2025] read {gene_ids:,} gene_ids")
 
             # taxonomy data
             taxonomy_file = os.path.join(gene_dir, "taxid_taxon.csv")
-            logger.info(f"reading {taxonomy_file}")
+            logger.info(f"[NCBI gene 2025] reading {taxonomy_file}")
             with open(taxonomy_file, "r", encoding="utf8", newline="") as f:
                 reader = csv.reader(f, dialect="csv")
                 header = next(reader)
@@ -560,13 +561,154 @@ class NCBIGene2025:
                 for tax_id, name in reader:
                     self.taxid_to_name[tax_id] = name
             tax_ids = len(self.taxid_to_name)
-            logger.info(f"read {tax_ids:,} tax_ids")
+            logger.info(f"[NCBI gene 2025] read {tax_ids:,} tax_ids")
         return
 
     def query(self, gene_id):
         tax_id, symbol = self.geneid_to_taxid_symbol.get(gene_id, ("", ""))
         taxon = self.taxid_to_name.get(tax_id, "")
         return Gene(gene_id=gene_id, symbol=symbol, tax_id=tax_id, taxon=taxon)
+
+
+class UMLSCUI:
+    def __init__(self, cui="", preferred_name="", name_list=None, source_code_list=None):
+        self.cui = cui
+        self.preferred_name = preferred_name
+        self.name_list = name_list if name_list else []
+        self.source_code_list = source_code_list if source_code_list else []
+        return
+
+    def __str__(self):
+        return f"{self.cui}:{self.preferred_name}"
+
+    def get_node_json(self):
+        return "CUI", (self.cui, self.preferred_name)
+
+    def get_graph_json(self):
+        return [
+            node.get_node_json()
+            for node in [self] + self.name_list + self.source_code_list
+        ]
+
+
+class UMLSName:
+    def __init__(self, name="", cui_list=None):
+        self.name = name
+        self.cui_list = cui_list if cui_list else []
+        return
+
+    def __str__(self):
+        return self.name
+
+    def get_node_json(self):
+        return "name", self.name
+
+    def get_graph_json(self):
+        return [
+            node.get_node_json()
+            for node in [self] + self.cui_list
+        ]
+
+
+class UMLSSourceCode:
+    def __init__(self, source="", code="", cui_list=None):
+        self.source = source
+        self.code = code
+        self.cui_list = cui_list if cui_list else []
+        return
+
+    def __str__(self):
+        return f"{self.source}:{self.code}"
+
+    def get_node_json(self):
+        return "source-code", (self.source, self.code)
+
+    def get_graph_json(self):
+        return [
+            node.get_node_json()
+            for node in [self] + self.cui_list
+        ]
+
+    def get_first_name(self):
+        for cui in self.cui_list:
+            return cui.preferred_name
+        return ""
+
+
+class UMLSIndex:
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self.cui_str_to_cui_obj = {}
+        self.name_str_to_name_obj = {}
+        self.name_lower_str_to_name_lower_obj = {}
+        self.source_code_str_to_source_code_obj = {}
+
+        if self.data_dir:
+            self.load_data()
+        return
+
+    def load_data(self):
+        # CUI -> preferred_name
+        logger.info("[UMLS index] reading CUI -> preferred_name ...")
+        cui_preferred_name_file = os.path.join(self.data_dir, "cui_preferred_name.csv")
+        with open(cui_preferred_name_file, "r", encoding="utf8", newline="") as f:
+            reader = csv.reader(f, dialect="csv")
+            header = next(reader)
+            assert header == ["CUI", "preferred_name"]
+            for cui_string, preferred_name in reader:
+                self.cui_str_to_cui_obj[cui_string] = UMLSCUI(cui=cui_string, preferred_name=preferred_name)
+        cuis = len(self.cui_str_to_cui_obj)
+        logger.info(f"[UMLS index] read {cuis:,} CUIs")
+
+        # CUI <-> name
+        # CUI <- lowercased name
+        logger.info("[UMLS index] reading CUI <-> name ...")
+        cui_name_file = os.path.join(self.data_dir, "cui_name.csv")
+        with open(cui_name_file, "r", encoding="utf8", newline="") as f:
+            reader = csv.reader(f, dialect="csv")
+            header = next(reader)
+            assert header == ["CUI", "name"]
+            for cui_string, name_string in reader:
+                name_lower_string = name_string.lower()
+                cui = self.cui_str_to_cui_obj[cui_string]
+                name = self.name_str_to_name_obj.get(name_string)
+                name_lower = self.name_lower_str_to_name_lower_obj.get(name_lower_string)
+                if name is None:
+                    name = UMLSName(name=name_string)
+                    self.name_str_to_name_obj[name_string] = name
+                if name_lower is None:
+                    name_lower = UMLSName(name=name_lower_string)
+                    self.name_lower_str_to_name_lower_obj[name_lower_string] = name_lower
+                    name_lower.cui_dict = {}
+                cui.name_list.append(name)
+                name.cui_list.append(cui)
+                name_lower.cui_dict[cui] = True
+        for _name_lower_string, name_lower in self.name_lower_str_to_name_lower_obj.items():
+            name_lower.cui_list = list(name_lower.cui_dict.keys())
+            del name_lower.cui_dict
+        names = len(self.name_str_to_name_obj)
+        name_lowers = len(self.name_lower_str_to_name_lower_obj)
+        logger.info(f"[UMLS index] read {names:,} case-sensitive names; {name_lowers:,} case-insensitive names")
+
+        # CUI <-> source-code
+        logger.info("[UMLS index] reading CUI <-> source-code ...")
+        cui_source_code_file = os.path.join(self.data_dir, "cui_source_code.csv")
+        with open(cui_source_code_file, "r", encoding="utf8", newline="") as f:
+            reader = csv.reader(f, dialect="csv")
+            header = next(reader)
+            assert header == ["CUI", "source", "code"]
+            for cui_string, source, code in reader:
+                cui = self.cui_str_to_cui_obj[cui_string]
+                source_code_string = (source, code)
+                source_code = self.source_code_str_to_source_code_obj.get(source_code_string)
+                if source_code is None:
+                    source_code = UMLSSourceCode(source=source, code=code)
+                    self.source_code_str_to_source_code_obj[source_code_string] = source_code
+                cui.source_code_list.append(source_code)
+                source_code.cui_list.append(cui)
+        source_codes = len(self.source_code_str_to_source_code_obj)
+        logger.info(f"[UMLS index] read {source_codes:,} source-code pairs")
+        return
 
 
 class VariantNEN:
@@ -1860,7 +2002,11 @@ class CGDInferenceKB:
             self.d_c_index[d][c] = i
         return
 
-    def query(self, c_list=None, d_list=None, max_cds=None, max_cgds_per_cd=None, max_pmids_per_cg_gd=None):
+    def query(self,
+              c_list=None, d_list=None,
+              max_cds=None, max_cgds_per_cd=None, max_pmids_per_cg_gd=None,
+              umls_index=None,
+              ):
         # default arguments
         if c_list is None:
             c_list = []
@@ -1872,6 +2018,23 @@ class CGDInferenceKB:
             max_cgds_per_cd = 10
         if max_pmids_per_cg_gd is None:
             max_pmids_per_cg_gd = 3
+
+        # map name to id
+        if umls_index:
+            c_list = copy.copy(c_list)
+            d_list = copy.copy(d_list)
+            for query_list in [c_list, d_list]:
+                result_list = []
+                for query in query_list:
+                    name = umls_index.name_lower_str_to_name_lower_obj.get(query.lower())
+                    if not name:
+                        continue
+                    for cui in name.cui_list:
+                        for source_code in cui.source_code_list:
+                            if source_code.source == "MSH":
+                                result_list.append(source_code.code)
+                query_list.extend(result_list)
+                del result_list
 
         # retrieve CD data indices
         index_list = []

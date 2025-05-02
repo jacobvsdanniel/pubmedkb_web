@@ -12,13 +12,15 @@ from collections import defaultdict
 
 from flask import Flask, render_template, request, stream_with_context
 
-from kb_utils import query_variant, NEN, V2G, NCBIGene, VariantNEN, KB, PaperKB, GeVarToGLOF, Meta
+from kb_utils import query_variant, NEN, V2G
+from kb_utils import NCBIGene, VariantNEN, KB, PaperKB, GeVarToGLOF, Meta
 from kb_utils import GVDScore, GDScore, DiseaseToGene
 from kb_utils import MESHNameKB, MESHGraph, MESHChemical, ChemicalDiseaseKB
 from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from kb_utils import get_paper_meta_html
 from kb_utils import CGDInferenceKB
 from kb_utils import NCBIGene2025
+from kb_utils import UMLSIndex, UMLSCUI, UMLSName, UMLSSourceCode
 from summary_utils import Summary
 from VarSum_germline import GermlineVarSum
 try:
@@ -64,6 +66,7 @@ chemical_disease_kb = ChemicalDiseaseKB(None)
 qa = QA(None)
 cgd_inference_kb = CGDInferenceKB(None)
 ncbi_gene_2025 = NCBIGene2025(None)
+umls_index = UMLSIndex(None)
 kb_type = None
 show_aid = False
 
@@ -181,6 +184,21 @@ def serve_cgd_drug_discovery():
 @app.route("/ncbi_gene")
 def serve_ncbi_gene():
     return render_template("ncbi_gene.html")
+
+
+@app.route("/umls_cui")
+def serve_umls_cui():
+    return render_template("umls_cui.html")
+
+
+@app.route("/umls_name")
+def serve_umls_name():
+    return render_template("umls_name.html")
+
+
+@app.route("/umls_source_code")
+def serve_umls_source_code():
+    return render_template("umls_source_code.html")
 
 
 @app.route("/yolo")
@@ -3175,6 +3193,7 @@ def run_cgd_drug_discovery():
         max_cds=max_cds,
         max_cgds_per_cd=max_cgds_per_cd,
         max_pmids_per_cg_gd=max_pmids_per_cg_gd,
+        umls_index=umls_index,
     )
     logger.info(f"[run_cgd_drug_discovery] all_cds={all_cds:,}")
     returned_cds = len(cd_data)
@@ -3199,8 +3218,17 @@ def run_cgd_drug_discovery():
     for rank, (c, d, cd_score, all_cgds, cgd_data) in enumerate(cd_data):
         html_rank = html.escape(f"#{rank + 1}")
         html_cd_score = html.escape(cd_score)
-        html_c = f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={c}">Chemical:{c}</a>'
-        html_d = f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={d}">Disease:{d}</a>'
+
+        c_name = umls_index.source_code_str_to_source_code_obj.get(
+            ("MSH", c), UMLSSourceCode(source="MSH", code=c),
+        ).get_first_name()
+        html_c = f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={c}">{c}</a><br />' + html.escape(c_name)
+
+        d_name = umls_index.source_code_str_to_source_code_obj.get(
+            ("MSH", d), UMLSSourceCode(source="MSH", code=d),
+        ).get_first_name()
+        html_d = f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={d}">{d}</a><br />' + html.escape(d_name)
+
         html_cgds = html.escape(f"{all_cgds:,}")
 
         html_path_list = []
@@ -3278,6 +3306,7 @@ def query_cgd_drug_discovery():
         max_cds=max_cds,
         max_cgds_per_cd=max_cgds_per_cd,
         max_pmids_per_cg_gd=max_pmids_per_cg_gd,
+        umls_index=umls_index,
     )
     logger.info(f"[query_cgd_drug_discovery] all_cds={all_cds:,}")
     returned_cds = len(cd_data)
@@ -3317,17 +3346,216 @@ def query_ncbi_gene():
         query = json.loads(request.args.get("query"))
     else:
         query = json.loads(request.data)["query"]
-    logger.info(f"[run_ncbi_gene:query] {query}")
+    logger.info(f"[query_ncbi_gene:query] {query}")
 
     gene_id = query.get("gene_id")
     gene = ncbi_gene_2025.query(gene_id)
     gene_json = gene.get_json()
-    logger.info(f"[run_ncbi_gene] gene={gene_json}")
+    logger.info(f"[query_ncbi_gene] gene={gene_json}")
 
     # result
     response = {
         "query": query,
         "gene": gene_json,
+    }
+    return json.dumps(response)
+
+
+@app.route("/run_umls_cui", methods=["GET", "POST"])
+def run_umls_cui():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[run_umls_cui:query] {query}")
+
+    cui = query.get("cui")
+    cui = umls_index.cui_str_to_cui_obj.get(cui, UMLSCUI(cui=cui))
+    logger.info(f"[run_umls_cui] cui={cui}")
+
+    html_table = (f'<table><tr>'
+                  f'<th>Attribute</th>'
+                  f'<th>Value</th>'
+                  f'</tr>')
+
+    for attribute, value in cui.get_graph_json():
+        html_attribute = html.escape(attribute)
+        if isinstance(value, str):
+            html_value = html.escape(value)
+        elif isinstance(value, tuple):
+            html_value = "<br />".join(html.escape(i) for i in value)
+        else:
+            logger.info(f"wrong value type: value={value}")
+            html_value = ""
+
+        html_table += (f"<tr>"
+                       f"<td>{html_attribute}</td>"
+                       f"<td>{html_value}</td>"
+                       f"</tr>")
+
+    html_table += "</table>"
+    logger.info(f"[run_umls_cui] result table created")
+
+    response = {"result": html_table}
+    return json.dumps(response)
+
+
+@app.route("/query_umls_cui", methods=["GET", "POST"])
+def query_umls_cui():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[query_umls_cui:query] {query}")
+
+    cui = query.get("cui")
+    cui = umls_index.cui_str_to_cui_obj.get(cui, UMLSCUI(cui=cui))
+    logger.info(f"[query_umls_cui] cui={cui}")
+
+    # result
+    response = {
+        "query": query,
+        "result": cui.get_graph_json(),
+    }
+    return json.dumps(response)
+
+
+@app.route("/run_umls_name", methods=["GET", "POST"])
+def run_umls_name():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[run_umls_name:query] {query}")
+
+    name = query.get("name")
+    case_sensitive = query.get("case-sensitive", False)
+    if case_sensitive:
+        name = umls_index.name_str_to_name_obj.get(name, UMLSName(name=name))
+    else:
+        name = name.lower()
+        name = umls_index.name_lower_str_to_name_lower_obj.get(name, UMLSName(name=name))
+    logger.info(f"[run_umls_name] name={name}")
+
+    html_table = (f'<table><tr>'
+                  f'<th>Attribute</th>'
+                  f'<th>Value</th>'
+                  f'</tr>')
+
+    for attribute, value in name.get_graph_json():
+        html_attribute = html.escape(attribute)
+        if isinstance(value, str):
+            html_value = html.escape(value)
+        elif isinstance(value, tuple):
+            html_value = "<br />".join(html.escape(i) for i in value)
+        else:
+            logger.info(f"wrong value type: value={value}")
+            html_value = ""
+
+        html_table += (f"<tr>"
+                       f"<td>{html_attribute}</td>"
+                       f"<td>{html_value}</td>"
+                       f"</tr>")
+
+    html_table += "</table>"
+    logger.info(f"[run_umls_name] result table created")
+
+    response = {"result": html_table}
+    return json.dumps(response)
+
+
+@app.route("/query_umls_name", methods=["GET", "POST"])
+def query_umls_name():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[query_umls_name:query] {query}")
+
+    name = query.get("name")
+    case_sensitive = query.get("case_sensitive", False)
+    if case_sensitive:
+        name = umls_index.name_str_to_name_obj.get(name, UMLSName(name=name))
+    else:
+        name = name.lower()
+        name = umls_index.name_lower_str_to_name_lower_obj.get(name, UMLSName(name=name))
+    logger.info(f"[query_umls_name] name={name}")
+
+    # result
+    response = {
+        "query": query,
+        "result": name.get_graph_json(),
+    }
+    return json.dumps(response)
+
+
+@app.route("/run_umls_source_code", methods=["GET", "POST"])
+def run_umls_source_code():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[run_umls_source_code:query] {query}")
+
+    source = query.get("source")
+    code = query.get("code")
+    source_code = umls_index.source_code_str_to_source_code_obj.get(
+        (source, code), UMLSSourceCode(source=source, code=code),
+    )
+    logger.info(f"[run_umls_source_code] source_code={source_code}")
+
+    html_table = (f'<table><tr>'
+                  f'<th>Attribute</th>'
+                  f'<th>Value</th>'
+                  f'</tr>')
+
+    for attribute, value in source_code.get_graph_json():
+        html_attribute = html.escape(attribute)
+        if isinstance(value, str):
+            html_value = html.escape(value)
+        elif isinstance(value, tuple):
+            html_value = "<br />".join(html.escape(i) for i in value)
+        else:
+            logger.info(f"wrong value type: value={value}")
+            html_value = ""
+
+        html_table += (f"<tr>"
+                       f"<td>{html_attribute}</td>"
+                       f"<td>{html_value}</td>"
+                       f"</tr>")
+
+    html_table += "</table>"
+    logger.info(f"[run_umls_source_code] result table created")
+
+    response = {"result": html_table}
+    return json.dumps(response)
+
+
+@app.route("/query_umls_source_code", methods=["GET", "POST"])
+def query_umls_source_code():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[query_umls_source_code:query] {query}")
+
+    source = query.get("source")
+    code = query.get("code")
+    source_code = umls_index.source_code_str_to_source_code_obj.get(
+        (source, code), UMLSSourceCode(source=source, code=code),
+    )
+    logger.info(f"[query_umls_source_code] source_code={source_code}")
+
+    # result
+    response = {
+        "query": query,
+        "result": source_code.get_graph_json(),
     }
     return json.dumps(response)
 
@@ -3390,6 +3618,7 @@ class Arg:
         self.retriv_dir = raw_arg.get("retriv_dir")
         self.cgd_inference_kb_dir = raw_arg.get("cgd_inference_kb_dir")
         self.gene_2025_dir = raw_arg.get("gene_2025_dir")
+        self.umls_dir = raw_arg.get("umls_dir")
         self.kb_type = raw_arg.get("kb_type")
         self.kb_dir = raw_arg.get("kb_dir")
         self.show_aid = raw_arg.get("show_aid", "false")
@@ -3478,6 +3707,10 @@ def main():
     if arg.gene_2025_dir:
         global ncbi_gene_2025
         ncbi_gene_2025 = NCBIGene2025(arg.gene_2025_dir)
+
+    if arg.umls_dir:
+        global umls_index
+        umls_index = UMLSIndex(arg.umls_dir)
 
     if True:
         global show_aid

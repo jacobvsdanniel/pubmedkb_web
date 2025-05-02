@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>CGD Drug Discovery</title>
+    <title>UMLS Name</title>
     <style>
         table {
             font-family: Helvetica;
@@ -47,21 +47,18 @@
 <body>
 
 <div style="font-size: 16px;">
-    pubmedKB API:&nbsp;&nbsp;<a href="home">home</a>&nbsp;&nbsp;<a href="cgd_drug_discovery">CGD-Drug-Discovery</a>
+    pubmedKB API:&nbsp;&nbsp;<a href="home">home</a>&nbsp;&nbsp;<a href="umls_name">UMLS-Name</a>
 </div>
 <br />
-<h1>CGD Drug Discovery</h1>
+<h1>UMLS Name</h1>
 <br />
 
 <label style="font-size: 22px;">Query</label><br /><br />
 &nbsp;&nbsp;
-<textarea id="ta_query" spellcheck="false" style="font-size: 16px; width: 30%; aspect-ratio: 3;">
+<textarea id="ta_query" spellcheck="false" style="font-size: 16px; width: 15%; aspect-ratio: 3;">
 {
-    "chemical_list": ["Genistein"],
-    "disease_list": ["COVID-19"],
-    "max_cds": 10,
-    "max_cgds_per_cd": 5,
-    "max_pmids_per_cg_gd": 3
+    "name": "lung cancer",
+    "case-sensitive": false
 }
 </textarea>
 <br /><br />
@@ -76,9 +73,9 @@
 
 <label style="font-size: 22px;">Result</label><br /><br />
 
-<div id="div_result" style="width: 80%; font-size: 14px;">None</div>
+<div id="div_result" style="width: 60%; font-size: 14px;">None</div>
 
-<script type="text/javascript" src="static/cgd_drug_discovery.js"></script>
+<script type="text/javascript" src="static/umls_name.js"></script>
 
 </body>
 
