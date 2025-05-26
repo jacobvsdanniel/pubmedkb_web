@@ -13,6 +13,7 @@ import unicodedata
 from collections import defaultdict
 
 import requests
+import spacy
 import retriv
 from retriv import DenseRetriever
 
@@ -709,6 +710,89 @@ class UMLSIndex:
         source_codes = len(self.source_code_str_to_source_code_obj)
         logger.info(f"[UMLS index] read {source_codes:,} source-code pairs")
         return
+
+
+class UMLSDoc:
+    def __init__(self, umls_index):
+        self.umls_index = umls_index
+        self.spacy_nlp = spacy.load(
+            "en_core_web_sm",
+            exclude=["tok2vec", "tagger", "parser", "attribute_ruler", "lemmatizer", "ner"],
+        )
+        return
+
+    def annotate_doc(self, doc, case_sensitive, max_concept_tokens, max_concept_characters, min_concept_characters):
+        # preprocess
+        #    note: token.idx is the token's starting character offset
+        token_index_to_character_index = [token.idx for token in doc] + [len(doc.text)]
+        tokens = len(doc)
+        if case_sensitive:
+            text = doc.text
+            name_str_to_name_obj = self.umls_index.name_str_to_name_obj
+        else:
+            text = doc.text.lower()
+            name_str_to_name_obj = self.umls_index.name_lower_str_to_name_lower_obj
+
+        # iterate through all tokens spans
+        #   index naming:
+        #       begin, ..., last, end
+        #   Note:
+        #       a token does not contain word separators, i.e. spaces, if any,
+        #       and we want to include all word separators in the original text.
+        name_dict = {}
+        cui_dict = {}
+
+        # scan all starting tokens
+        for begin_token_index in range(tokens):
+            begin_character_index = token_index_to_character_index[begin_token_index]
+            max_term_tokens_for_begin_token_index = min(max_concept_tokens, tokens - begin_token_index)
+
+            # scan all token lengths
+            for term_tokens in range(max_term_tokens_for_begin_token_index, 0, -1):
+                last_token_index = begin_token_index + term_tokens - 1
+                end_character_index = token_index_to_character_index[last_token_index] + len(doc[last_token_index])
+                term_length = end_character_index - begin_character_index
+
+                # check character length
+                if term_length < min_concept_characters or max_concept_characters < term_length:
+                    continue
+                term = text[begin_character_index:end_character_index]
+
+                # check if the term is in UMLS
+                name = name_str_to_name_obj.get(term)
+                if name is None:
+                    continue
+
+                name_dict[name.name] = True
+                for cui in name.cui_list:
+                    cui_dict[cui.cui] = True
+
+        name_list = list(name_dict)
+        cui_list = list(cui_dict)
+        return name_list, cui_list
+
+    def annotate(
+            self, text_list,
+            case_sensitive=None, max_concept_tokens=None, max_concept_characters=None, min_concept_characters=None,
+    ):
+        # default arguments
+        if case_sensitive is None:
+            case_sensitive = True
+        if max_concept_tokens is None:
+            max_concept_tokens = 10
+        if max_concept_characters is None:
+            max_concept_characters = 100
+        if min_concept_characters is None:
+            min_concept_characters = 3
+
+        # annotate UMLS names and CUIs for each text
+        annotation_list = [
+            self.annotate_doc(
+                doc, case_sensitive, max_concept_tokens, max_concept_characters, min_concept_characters,
+            )
+            for doc in self.spacy_nlp.pipe(text_list)  # default n_process=1, default batch_size=1000
+        ]
+        return annotation_list
 
 
 class VariantNEN:

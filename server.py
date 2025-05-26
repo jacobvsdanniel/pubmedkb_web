@@ -20,7 +20,7 @@ from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from kb_utils import get_paper_meta_html
 from kb_utils import CGDInferenceKB
 from kb_utils import NCBIGene2025
-from kb_utils import UMLSIndex, UMLSCUI, UMLSName, UMLSSourceCode
+from kb_utils import UMLSIndex, UMLSCUI, UMLSName, UMLSSourceCode, UMLSDoc
 from summary_utils import Summary
 from VarSum_germline import GermlineVarSum
 try:
@@ -67,6 +67,7 @@ qa = QA(None)
 cgd_inference_kb = CGDInferenceKB(None)
 ncbi_gene_2025 = NCBIGene2025(None)
 umls_index = UMLSIndex(None)
+umls_doc = UMLSDoc(None)
 kb_type = None
 show_aid = False
 
@@ -199,6 +200,11 @@ def serve_umls_name():
 @app.route("/umls_source_code")
 def serve_umls_source_code():
     return render_template("umls_source_code.html")
+
+
+@app.route("/umls_doc")
+def serve_umls_doc():
+    return render_template("umls_doc.html")
 
 
 @app.route("/yolo")
@@ -3560,6 +3566,78 @@ def query_umls_source_code():
     return json.dumps(response)
 
 
+@app.route("/run_umls_doc", methods=["GET", "POST"])
+def run_umls_doc():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[run_umls_doc:query] {query}")
+
+    text_list = query.get("text_list")
+    case_sensitive = query.get("case-sensitive", True)
+    annotation_list = umls_doc.annotate(text_list, case_sensitive=case_sensitive)
+    names = 0
+    cuis = 0
+    for name_list, cui_list in annotation_list:
+        names += len(name_list)
+        cuis += len(cui_list)
+    logger.info(f"[run_umls_doc] annotated {names} names; {cuis:,} CUIs")
+
+    html_table = (f'<table><tr>'
+                  f'<th>Type</th>'
+                  f'<th>Value</th>'
+                  f'</tr>')
+
+    for text, (name_list, cui_list) in zip(text_list, annotation_list):
+        for _type, value_list in [
+            ("text", [text]),
+            ("name", name_list),
+            ("CUI", cui_list),
+        ]:
+            html_type = html.escape(_type)
+            for value in value_list:
+                html_value = html.escape(value)
+                html_table += (f"<tr>"
+                               f"<td>{html_type}</td>"
+                               f"<td>{html_value}</td>"
+                               f"</tr>")
+
+    html_table += "</table>"
+    logger.info(f"[run_umls_doc] result table created")
+
+    response = {"result": html_table}
+    return json.dumps(response)
+
+
+@app.route("/query_umls_doc", methods=["GET", "POST"])
+def query_umls_doc():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[query_umls_doc:query] {query}")
+
+    text_list = query.get("text_list")
+    case_sensitive = query.get("case-sensitive", True)
+    annotation_list = umls_doc.annotate(text_list, case_sensitive=case_sensitive)
+    names = 0
+    cuis = 0
+    for name_list, cui_list in annotation_list:
+        names += len(name_list)
+        cuis += len(cui_list)
+    logger.info(f"[query_umls_doc] annotated {names} names; {cuis:,} CUIs")
+
+    # result
+    response = {
+        "query": query,
+        "result": annotation_list,
+    }
+    return json.dumps(response)
+
+
 @app.route("/run_yolo", methods=["GET", "POST"])
 def run_yolo():
     # query
@@ -3709,8 +3787,9 @@ def main():
         ncbi_gene_2025 = NCBIGene2025(arg.gene_2025_dir)
 
     if arg.umls_dir:
-        global umls_index
+        global umls_index, umls_doc
         umls_index = UMLSIndex(arg.umls_dir)
+        umls_doc = UMLSDoc(umls_index)
 
     if True:
         global show_aid
