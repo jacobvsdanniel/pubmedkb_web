@@ -4,6 +4,7 @@ import sys
 import copy
 import html
 import json
+import time
 import heapq
 import asyncio
 import difflib
@@ -793,6 +794,82 @@ class UMLSDoc:
             for doc in self.spacy_nlp.pipe(text_list)  # default n_process=1, default batch_size=1000
         ]
         return annotation_list
+
+
+class UMLSPaperRetriever:
+    def __init__(self, data_dir, umls_doc):
+        self.data_dir = data_dir
+        self.pmid_list = []
+        self.retriever = None
+        self.umls_doc = umls_doc
+        self.queries_per_reload = 20
+        self.queries_since_last_reload = 0
+
+        if data_dir:
+            self.load_data()
+        return
+
+    def load_data(self):
+        import bm25s
+
+        # pmid list
+        logger.info("[UMLS Paper Retriever] reading pmid list...")
+        run_time = time.time()
+        pmid_list_file = os.path.join(self.data_dir, "pmid_list.txt")
+        with open(pmid_list_file, "r", encoding="utf8") as f:
+            for line in f:
+                self.pmid_list.append(line.strip())
+        pmids = len(self.pmid_list)
+        run_time = time.time() - run_time
+        logger.info(f"[UMLS Paper Retriever] read {pmids:,} PMIDs in {run_time:,.1f} sec")
+
+        # BM25 retriever
+        logger.info("[UMLS Paper Retriever] loading retriever...")
+        run_time = time.time()
+        self.retriever = bm25s.BM25.load(self.data_dir, mmap=True)
+        self.retriever.backend = "numba"
+        num_docs = self.retriever.scores["num_docs"]
+        assert num_docs == pmids
+        run_time = time.time() - run_time
+        logger.info(f"[UMLS Paper Retriever] loaded retriever in {run_time:,.1f} sec")
+        return
+
+    def query_by_text(self, text, case_sensitive=None, top_k=None):
+        logger.info(f"[UMLS Paper Retriever] text={text}")
+
+        if case_sensitive is None:
+            case_sensitive = True
+
+        _umls_name_list, umls_cui_list = self.umls_doc.annotate([text], case_sensitive=case_sensitive)[0]
+        return self.query_by_cui(umls_cui_list, top_k=top_k)
+
+    def query_by_cui(self, cui_list, top_k=None):
+        logger.info(f"[UMLS Paper Retriever] cui_list={cui_list}")
+
+        if not cui_list:
+            return []
+
+        if top_k is None:
+            top_k = 10
+        top_k = min(top_k, len(self.pmid_list))
+
+        logger.info("[UMLS Paper Retriever] retrieving...")
+        run_time = time.time()
+        doc_id_array, _score_array = self.retriever.retrieve([cui_list], k=top_k)
+        retrieved_pmid_list = [self.pmid_list[doc_id] for doc_id in doc_id_array[0]]
+        run_time = time.time() - run_time
+        logger.info(f"retrieved {top_k:,} docs in {run_time:,.1f} sec")
+
+        self.queries_since_last_reload += 1
+        if self.queries_since_last_reload >= self.queries_per_reload:
+            logger.info("[UMLS Paper Retriever] reloading retriever to free up memory...")
+            run_time = time.time()
+            self.retriever.load_scores(self.data_dir, mmap=True, num_docs=len(self.pmid_list))
+            run_time = time.time() - run_time
+            logger.info(f"[UMLS Paper Retriever] reloaded retriever in {run_time:,.1f} sec")
+            self.queries_since_last_reload = 0
+
+        return retrieved_pmid_list
 
 
 class VariantNEN:

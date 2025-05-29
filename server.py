@@ -1,3 +1,4 @@
+import os
 import csv
 import sys
 import copy
@@ -20,7 +21,7 @@ from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from kb_utils import get_paper_meta_html
 from kb_utils import CGDInferenceKB
 from kb_utils import NCBIGene2025
-from kb_utils import UMLSIndex, UMLSCUI, UMLSName, UMLSSourceCode, UMLSDoc
+from kb_utils import UMLSIndex, UMLSCUI, UMLSName, UMLSSourceCode, UMLSDoc, UMLSPaperRetriever
 from summary_utils import Summary
 from VarSum_germline import GermlineVarSum
 try:
@@ -68,6 +69,7 @@ cgd_inference_kb = CGDInferenceKB(None)
 ncbi_gene_2025 = NCBIGene2025(None)
 umls_index = UMLSIndex(None)
 umls_doc = UMLSDoc(None)
+umls_paper_retriever = UMLSPaperRetriever(None, None)
 kb_type = None
 show_aid = False
 
@@ -205,6 +207,11 @@ def serve_umls_source_code():
 @app.route("/umls_doc")
 def serve_umls_doc():
     return render_template("umls_doc.html")
+
+
+@app.route("/umls_paper_search")
+def serve_umls_paper_search():
+    return render_template("umls_paper_search.html")
 
 
 @app.route("/yolo")
@@ -3583,7 +3590,7 @@ def run_umls_doc():
     for name_list, cui_list in annotation_list:
         names += len(name_list)
         cuis += len(cui_list)
-    logger.info(f"[run_umls_doc] annotated {names} names; {cuis:,} CUIs")
+    logger.info(f"[run_umls_doc] annotated {names:,} names; {cuis:,} CUIs")
 
     html_table = (f'<table><tr>'
                   f'<th>Type</th>'
@@ -3628,12 +3635,69 @@ def query_umls_doc():
     for name_list, cui_list in annotation_list:
         names += len(name_list)
         cuis += len(cui_list)
-    logger.info(f"[query_umls_doc] annotated {names} names; {cuis:,} CUIs")
+    logger.info(f"[query_umls_doc] annotated {names:,} names; {cuis:,} CUIs")
 
     # result
     response = {
         "query": query,
         "result": annotation_list,
+    }
+    return json.dumps(response)
+
+
+@app.route("/run_umls_paper_search", methods=["GET", "POST"])
+def run_umls_paper_search():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[run_umls_paper_search:query] {query}")
+
+    text = query.get("query")
+    case_sensitive = query.get("case-sensitive", True)
+    top_k = query.get("top_k", 20)
+    pmid_list = umls_paper_retriever.query_by_text(text, case_sensitive=case_sensitive, top_k=top_k)
+    pmids = len(pmid_list)
+    logger.info(f"[run_umls_paper_search] {pmids:,} pmids")
+
+    html_table = (f'<table><tr>'
+                  f'<th>Rank</th>'
+                  f'<th>PMID</th>'
+                  f'</tr>')
+    for rank, pmid in enumerate(pmid_list):
+        html_rank = html.escape(f"#{rank + 1}")
+        html_pmid = f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{html.escape(pmid)}</a>'
+        html_table += (f"<tr>"
+                       f"<td>{html_rank}</td>"
+                       f"<td>{html_pmid}</td>"
+                       f"</tr>")
+    html_table += "</table>"
+    logger.info(f"[run_umls_paper_search] result table created")
+
+    response = {"result": html_table}
+    return json.dumps(response)
+
+
+@app.route("/query_umls_paper_search", methods=["GET", "POST"])
+def query_umls_paper_search():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[query_umls_paper_search:query] {query}")
+
+    text = query.get("query")
+    case_sensitive = query.get("case-sensitive", True)
+    top_k = query.get("top_k", 20)
+    pmid_list = umls_paper_retriever.query_by_text(text, case_sensitive=case_sensitive, top_k=top_k)
+    pmids = len(pmid_list)
+    logger.info(f"[query_umls_paper_search] {pmids:,} pmids")
+
+    response = {
+        "query": query,
+        "pmid_list": pmid_list,
     }
     return json.dumps(response)
 
@@ -3787,9 +3851,11 @@ def main():
         ncbi_gene_2025 = NCBIGene2025(arg.gene_2025_dir)
 
     if arg.umls_dir:
-        global umls_index, umls_doc
+        global umls_index, umls_doc, umls_paper_retriever
         umls_index = UMLSIndex(arg.umls_dir)
         umls_doc = UMLSDoc(umls_index)
+        retriever_dir = os.path.join(arg.umls_dir, "pubmed_bm25")
+        umls_paper_retriever = UMLSPaperRetriever(retriever_dir, umls_doc)
 
     if True:
         global show_aid
