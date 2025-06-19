@@ -858,7 +858,7 @@ class UMLSPaperRetriever:
         doc_id_array, _score_array = self.retriever.retrieve([cui_list], k=top_k)
         retrieved_pmid_list = [self.pmid_list[doc_id] for doc_id in doc_id_array[0]]
         run_time = time.time() - run_time
-        logger.info(f"retrieved {top_k:,} docs in {run_time:,.1f} sec")
+        logger.info(f"[UMLS Paper Retriever] retrieved {top_k:,} docs in {run_time:,.1f} sec")
 
         self.queries_since_last_reload += 1
         if self.queries_since_last_reload >= self.queries_per_reload:
@@ -870,6 +870,87 @@ class UMLSPaperRetriever:
             self.queries_since_last_reload = 0
 
         return retrieved_pmid_list
+
+
+class PaperImpactRanker:
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self.db = None
+
+        if data_dir:
+            self.load_data()
+        return
+
+    def load_data(self):
+        import dbm.gnu
+
+        # GDBM DB
+        logger.info("[Paper Impact Ranker] loading DB...")
+        run_time = time.time()
+        db_file = os.path.join(self.data_dir, "pmid_rank_db.bin")
+        self.db = dbm.gnu.open(db_file, "r")
+        run_time = time.time() - run_time
+        logger.info(f"[Paper Impact Ranker] loaded DB in {run_time:,.1f} sec")
+        return
+
+    def query(self, pmid_list):
+        # retrieve rank from DB
+        rank_pmid_list = []
+        for pmid in pmid_list:
+            rank = self.db.get(pmid, None)
+            if rank is not None:
+                rank = int(rank)
+                rank_pmid_list.append((rank, pmid))
+
+        # sort pmid by rank
+        rank_pmid_list = [
+            pmid
+            for rank, pmid in sorted(rank_pmid_list)
+        ]
+        return rank_pmid_list
+
+
+class UMLSImpactPaperRetriever:
+    def __init__(self, umls_paper_retriever, paper_impact_retriever):
+        self.umls_paper_retriever = umls_paper_retriever
+        self.paper_impact_retriever = paper_impact_retriever
+        self.reciprocal_k = 61
+        return
+
+    def query(self, text, case_sensitive=None, top_umls_pmids=None, top_combine_pmids=None):
+        if top_umls_pmids is None:
+            top_umls_pmids = 10000
+        if top_combine_pmids is None:
+            top_combine_pmids = 20
+
+        # UMLS: search by text and retrieved ranked PMIDs
+        umls_pmid_list = self.umls_paper_retriever.query_by_text(
+            text,
+            case_sensitive=case_sensitive,
+            top_k=top_umls_pmids,
+        )
+
+        # paper impact: rank PMIDs by paper impact
+        impact_pmid_list = self.paper_impact_retriever.query(umls_pmid_list)
+
+        # calculate combined score using both UMLS and impact rankings
+        pmid_to_score = {
+            pmid: 1 / (i + self.reciprocal_k)
+            for i, pmid in enumerate(umls_pmid_list)
+        }
+        for i, pmid in enumerate(impact_pmid_list):
+            pmid_to_score[pmid] += 1 / (i + self.reciprocal_k)
+
+        # final ranked PMIDs
+        score_pmid_list = [(score, pmid) for pmid, score in pmid_to_score.items()]
+        del pmid_to_score
+        all_pmids = len(score_pmid_list)
+        if top_combine_pmids < all_pmids / 4:
+            score_pmid_list = heapq.nlargest(top_combine_pmids, score_pmid_list)
+        else:
+            score_pmid_list = sorted(score_pmid_list, key=lambda sp: -sp[0])[:top_combine_pmids]
+        pmid_list = [pmid for score, pmid in score_pmid_list]
+        return pmid_list
 
 
 class VariantNEN:

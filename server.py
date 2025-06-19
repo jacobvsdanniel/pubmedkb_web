@@ -22,6 +22,8 @@ from kb_utils import get_paper_meta_html
 from kb_utils import CGDInferenceKB
 from kb_utils import NCBIGene2025
 from kb_utils import UMLSIndex, UMLSCUI, UMLSName, UMLSSourceCode, UMLSDoc, UMLSPaperRetriever
+from kb_utils import PaperImpactRanker
+from kb_utils import UMLSImpactPaperRetriever
 from summary_utils import Summary
 from VarSum_germline import GermlineVarSum
 try:
@@ -70,6 +72,8 @@ ncbi_gene_2025 = NCBIGene2025(None)
 umls_index = UMLSIndex(None)
 umls_doc = UMLSDoc(None)
 umls_paper_retriever = UMLSPaperRetriever(None, None)
+paper_impact_ranker = PaperImpactRanker(None)
+umls_impact_paper_retriever = UMLSImpactPaperRetriever(None, None)
 kb_type = None
 show_aid = False
 
@@ -212,6 +216,11 @@ def serve_umls_doc():
 @app.route("/umls_paper_search")
 def serve_umls_paper_search():
     return render_template("umls_paper_search.html")
+
+
+@app.route("/umls_impact_paper_search")
+def serve_umls_impact_paper_search():
+    return render_template("umls_impact_paper_search.html")
 
 
 @app.route("/yolo")
@@ -3702,6 +3711,63 @@ def query_umls_paper_search():
     return json.dumps(response)
 
 
+@app.route("/run_umls_impact_paper_search", methods=["GET", "POST"])
+def run_umls_impact_paper_search():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[run_umls_impact_paper_search:query] {query}")
+
+    text = query.get("query")
+    case_sensitive = query.get("case-sensitive", True)
+    top_k = query.get("top_k", 20)
+    pmid_list = umls_impact_paper_retriever.query(text, case_sensitive=case_sensitive, top_combine_pmids=top_k)
+    pmids = len(pmid_list)
+    logger.info(f"[run_umls_impact_paper_search] {pmids:,} pmids")
+
+    html_table = (f'<table><tr>'
+                  f'<th>Rank</th>'
+                  f'<th>PMID</th>'
+                  f'</tr>')
+    for rank, pmid in enumerate(pmid_list):
+        html_rank = html.escape(f"#{rank + 1}")
+        html_pmid = f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{html.escape(pmid)}</a>'
+        html_table += (f"<tr>"
+                       f"<td>{html_rank}</td>"
+                       f"<td>{html_pmid}</td>"
+                       f"</tr>")
+    html_table += "</table>"
+    logger.info(f"[run_umls_impact_paper_search] result table created")
+
+    response = {"result": html_table}
+    return json.dumps(response)
+
+
+@app.route("/query_umls_impact_paper_search", methods=["GET", "POST"])
+def query_umls_impact_paper_search():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[query_umls_impact_paper_search:query] {query}")
+
+    text = query.get("query")
+    case_sensitive = query.get("case-sensitive", True)
+    top_k = query.get("top_k", 20)
+    pmid_list = umls_impact_paper_retriever.query(text, case_sensitive=case_sensitive, top_combine_pmids=top_k)
+    pmids = len(pmid_list)
+    logger.info(f"[query_umls_impact_paper_search] {pmids:,} pmids")
+
+    response = {
+        "query": query,
+        "pmid_list": pmid_list,
+    }
+    return json.dumps(response)
+
+
 @app.route("/run_yolo", methods=["GET", "POST"])
 def run_yolo():
     # query
@@ -3761,6 +3827,7 @@ class Arg:
         self.cgd_inference_kb_dir = raw_arg.get("cgd_inference_kb_dir")
         self.gene_2025_dir = raw_arg.get("gene_2025_dir")
         self.umls_dir = raw_arg.get("umls_dir")
+        self.paper_impact_dir = raw_arg.get("paper_impact_dir")
         self.kb_type = raw_arg.get("kb_type")
         self.kb_dir = raw_arg.get("kb_dir")
         self.show_aid = raw_arg.get("show_aid", "false")
@@ -3856,6 +3923,14 @@ def main():
         umls_doc = UMLSDoc(umls_index)
         retriever_dir = os.path.join(arg.umls_dir, "pubmed_bm25")
         umls_paper_retriever = UMLSPaperRetriever(retriever_dir, umls_doc)
+
+    if arg.paper_impact_dir:
+        global paper_impact_ranker
+        paper_impact_ranker = PaperImpactRanker(arg.paper_impact_dir)
+
+    if arg.umls_dir and arg.paper_impact_dir:
+        global umls_impact_paper_retriever
+        umls_impact_paper_retriever = UMLSImpactPaperRetriever(umls_paper_retriever, paper_impact_ranker)
 
     if True:
         global show_aid
