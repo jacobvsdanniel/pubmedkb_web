@@ -24,6 +24,8 @@ from kb_utils import NCBIGene2025
 from kb_utils import UMLSIndex, UMLSCUI, UMLSName, UMLSSourceCode, UMLSDoc, UMLSPaperRetriever
 from kb_utils import PaperImpactRanker
 from kb_utils import UMLSImpactPaperRetriever
+from kb_utils import EmbeddingPaperRetriever
+from kb_utils import UMLSImpactEmbeddingPaperRetriever
 from summary_utils import Summary
 from VarSum_germline import GermlineVarSum
 try:
@@ -74,6 +76,8 @@ umls_doc = UMLSDoc(None)
 umls_paper_retriever = UMLSPaperRetriever(None, None)
 paper_impact_ranker = PaperImpactRanker(None)
 umls_impact_paper_retriever = UMLSImpactPaperRetriever(None, None)
+embedding_paper_retriever = EmbeddingPaperRetriever(None, None, None)
+umls_impact_embedding_paper_retriever = UMLSImpactEmbeddingPaperRetriever(None, None)
 kb_type = None
 show_aid = False
 
@@ -221,6 +225,11 @@ def serve_umls_paper_search():
 @app.route("/umls_impact_paper_search")
 def serve_umls_impact_paper_search():
     return render_template("umls_impact_paper_search.html")
+
+
+@app.route("/umls_impact_embedding_paper_search")
+def serve_umls_impact_embedding_paper_search():
+    return render_template("umls_impact_embedding_paper_search.html")
 
 
 @app.route("/yolo")
@@ -3768,6 +3777,63 @@ def query_umls_impact_paper_search():
     return json.dumps(response)
 
 
+@app.route("/run_umls_impact_embedding_paper_search", methods=["GET", "POST"])
+def run_umls_impact_embedding_paper_search():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[run_umls_impact_embedding_paper_search:query] {query}")
+
+    text = query.get("query")
+    case_sensitive = query.get("case-sensitive", True)
+    top_k = query.get("top_k", 20)
+    pmid_list = umls_impact_embedding_paper_retriever.query(text, case_sensitive=case_sensitive, top_k=top_k)
+    pmids = len(pmid_list)
+    logger.info(f"[run_umls_impact_embedding_paper_search] retrieved {pmids:,} pmids")
+
+    html_table = (f'<table><tr>'
+                  f'<th>Rank</th>'
+                  f'<th>PMID</th>'
+                  f'</tr>')
+    for rank, pmid in enumerate(pmid_list):
+        html_rank = html.escape(f"#{rank + 1}")
+        html_pmid = f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}">{html.escape(pmid)}</a>'
+        html_table += (f"<tr>"
+                       f"<td>{html_rank}</td>"
+                       f"<td>{html_pmid}</td>"
+                       f"</tr>")
+    html_table += "</table>"
+    logger.info(f"[run_umls_impact_embedding_paper_search] result table created")
+
+    response = {"result": html_table}
+    return json.dumps(response)
+
+
+@app.route("/query_umls_impact_embedding_paper_search", methods=["GET", "POST"])
+def query_umls_impact_embedding_paper_search():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[query_umls_impact_embedding_paper_search:query] {query}")
+
+    text = query.get("query")
+    case_sensitive = query.get("case-sensitive", True)
+    top_k = query.get("top_k", 20)
+    pmid_list = umls_impact_embedding_paper_retriever.query(text, case_sensitive=case_sensitive, top_k=top_k)
+    pmids = len(pmid_list)
+    logger.info(f"[query_umls_impact_embedding_paper_search] retrieved {pmids:,} pmids")
+
+    response = {
+        "query": query,
+        "pmid_list": pmid_list,
+    }
+    return json.dumps(response)
+
+
 @app.route("/run_yolo", methods=["GET", "POST"])
 def run_yolo():
     # query
@@ -3828,6 +3894,9 @@ class Arg:
         self.gene_2025_dir = raw_arg.get("gene_2025_dir")
         self.umls_dir = raw_arg.get("umls_dir")
         self.paper_impact_dir = raw_arg.get("paper_impact_dir")
+        self.query_embedding = raw_arg.get("query_embedding")
+        self.qdrant_server = raw_arg.get("qdrant_server")
+        self.qdrant_collection = raw_arg.get("qdrant_collection")
         self.kb_type = raw_arg.get("kb_type")
         self.kb_dir = raw_arg.get("kb_dir")
         self.show_aid = raw_arg.get("show_aid", "false")
@@ -3931,6 +4000,19 @@ def main():
     if arg.umls_dir and arg.paper_impact_dir:
         global umls_impact_paper_retriever
         umls_impact_paper_retriever = UMLSImpactPaperRetriever(umls_paper_retriever, paper_impact_ranker)
+
+    if arg.query_embedding:
+        global embedding_paper_retriever
+        embedding_paper_retriever = EmbeddingPaperRetriever(
+            arg.query_embedding, arg.qdrant_server, arg.qdrant_collection,
+        )
+
+    if arg.umls_dir and arg.paper_impact_dir and arg.query_embedding:
+        global umls_impact_embedding_paper_retriever
+        umls_impact_embedding_paper_retriever = UMLSImpactEmbeddingPaperRetriever(
+            umls_impact_paper_retriever=umls_impact_paper_retriever,
+            embedding_paper_retriever=embedding_paper_retriever,
+        )
 
     if True:
         global show_aid

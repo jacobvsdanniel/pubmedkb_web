@@ -7,3 +7,5 @@ tiktoken==0.7.0
 gunicorn==21.2.0
 spacy==3.6.0
 bm25s[full]==0.2.13
+transformers[torch]==4.46.3
+qdrant-client==1.12.1

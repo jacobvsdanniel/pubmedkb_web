@@ -17,6 +17,10 @@ import requests
 import spacy
 import retriv
 from retriv import DenseRetriever
+import torch
+from transformers import AutoTokenizer, AutoModel
+from qdrant_client import QdrantClient
+from qdrant_client.models import Filter, FieldCondition, MatchAny
 
 try:
     from gpt_utils import async_run_qa, run_qa, run_qa_stream, run_qka_stream, run_pqa_stream
@@ -950,6 +954,158 @@ class UMLSImpactPaperRetriever:
         else:
             score_pmid_list = sorted(score_pmid_list, key=lambda sp: -sp[0])[:top_combine_pmids]
         pmid_list = [pmid for score, pmid in score_pmid_list]
+        return pmid_list
+
+
+class TransformersEmbedding:
+    def __init__(self, model, max_length=None):
+        self.tokenizer = AutoTokenizer.from_pretrained(model)
+        self.model = AutoModel.from_pretrained(model, add_pooling_layer=False)
+        self.max_length = max_length
+
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model.to(self.device)
+        logger.info(f"[TransformersEmbedding] using {self.device}")
+
+        self.model.eval()
+        return
+
+    def embed(self, text_list):
+        # encoded_input: pytorch tensor of token ids
+        encoded_input = self.tokenizer(
+            text_list,
+            max_length=self.max_length,
+            truncation=True,
+            padding=True,
+            return_tensors="pt",
+        )
+        if self.device == "cuda":
+            encoded_input = encoded_input.to(self.device)
+
+        # model_output[0][:, 0]
+        #   "0": last hidden state
+        #   ":": all sequences
+        #   "0": first token in a sequence (CLS)
+        with torch.no_grad():
+            model_output = self.model(**encoded_input)
+        embedding = model_output[0][:, 0]
+        embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
+        if self.device == "cuda":
+            embedding = embedding.cpu().numpy()
+        else:
+            embedding = embedding.numpy()
+        return embedding
+
+
+class SnowflakeQueryEmbedding:
+    def __init__(self):
+        self.embedding = TransformersEmbedding(
+            "Snowflake/snowflake-arctic-embed-l-v2.0",
+            max_length=8192,
+        )
+        return
+
+    def embed_query(self, text_list):
+        text_list = [
+            f"query: {text}"
+            for text in text_list
+        ]
+        return self.embedding.embed(text_list)
+
+
+class EmbeddingPaperRetriever:
+    def __init__(self, query_embedding, qdrant_server, qdrant_collection):
+        # embedding model
+        if query_embedding is None:
+            pass
+        elif query_embedding == "Snowflake/snowflake-arctic-embed-l-v2.0":
+            start_time = time.time()
+            self.query_embedding = SnowflakeQueryEmbedding()
+            run_time = time.time() - start_time
+            logger.info(f"[Embedding Paper Retriever] loaded query embedding model in {run_time:.1f} sec")
+        else:
+            assert False
+
+        # vector DB client
+        if qdrant_server is not None:
+            self.time_out = 300
+            self.qdrant_client = QdrantClient(qdrant_server, timeout=self.time_out)
+            self.qdrant_collection = qdrant_collection
+        return
+
+    def query(self, text, filter_pmid_list=None, top_k=None):
+        if top_k is None:
+            top_k = 20
+
+        start_time = time.time()
+        query_vector = self.query_embedding.embed_query([text])[0]
+        run_time = time.time() - start_time
+        logger.info(f"[Embedding Paper Retriever] query embedded in {run_time:.1f} sec")
+
+        start_time = time.time()
+        if filter_pmid_list is None:
+            search_result = self.qdrant_client.query_points(
+                collection_name=self.qdrant_collection,
+                query=query_vector,
+                with_payload=True,
+                limit=top_k,
+                timeout=self.time_out,
+            ).points
+        else:
+            search_result = self.qdrant_client.query_points(
+                collection_name=self.qdrant_collection,
+                query=query_vector,
+                query_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="pmid",
+                            match=MatchAny(any=filter_pmid_list),
+                        ),
+                    ],
+                ),
+                with_payload=True,
+                limit=top_k,
+                timeout=self.time_out,
+            ).points
+        run_time = time.time() - start_time
+        points = len(search_result)
+        logger.info(f"[Embedding Paper Retriever] retrieved {points:,} points in {run_time:.1f} sec")
+
+        retrieved_pmid_list = [
+            point.payload["pmid"]
+            for point in search_result
+        ]
+        return retrieved_pmid_list
+
+
+class UMLSImpactEmbeddingPaperRetriever:
+    def __init__(self, umls_impact_paper_retriever, embedding_paper_retriever):
+        self.umls_impact_paper_retriever = umls_impact_paper_retriever
+        self.embedding_paper_retriever = embedding_paper_retriever
+        return
+
+    def query(self, text, case_sensitive=None, top_umls_pmids=None, top_umls_impact_pmids=None, top_k=None):
+        if top_umls_pmids is None:
+            top_umls_pmids = 10000
+        if top_umls_impact_pmids is None:
+            top_umls_impact_pmids = 1000
+        if top_k is None:
+            top_k = 20
+
+        # search using UMLS and impact
+        pmid_list = self.umls_impact_paper_retriever.query(
+            text,
+            case_sensitive=case_sensitive,
+            top_umls_pmids=top_umls_pmids,
+            top_combine_pmids=top_umls_impact_pmids,
+        )
+
+        # search using embedding
+        pmid_list = self.embedding_paper_retriever.query(
+            text,
+            filter_pmid_list=pmid_list,
+            top_k=top_k,
+        )
         return pmid_list
 
 
