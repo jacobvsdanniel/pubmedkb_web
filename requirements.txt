@@ -1,9 +1,6 @@
 Flask==3.0.1
-requests==2.32.3
-openai==1.61.1
-retriv==0.2.3
-fsspec==2023.5.0
-tiktoken==0.7.0
+requests==2.32.4
+openai==1.91.0
 gunicorn==21.2.0
 spacy==3.6.0
 bm25s[full]==0.2.13

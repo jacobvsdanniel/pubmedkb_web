@@ -22,10 +22,8 @@ from kb_utils import get_paper_meta_html
 from kb_utils import CGDInferenceKB
 from kb_utils import NCBIGene2025
 from kb_utils import UMLSIndex, UMLSCUI, UMLSName, UMLSSourceCode, UMLSDoc, UMLSPaperRetriever
-from kb_utils import PaperImpactRanker
-from kb_utils import UMLSImpactPaperRetriever
-from kb_utils import EmbeddingPaperRetriever
-from kb_utils import UMLSImpactEmbeddingPaperRetriever
+from kb_utils import PaperImpactRanker, UMLSImpactPaperRetriever, EmbeddingPaperRetriever
+from kb_utils import UMLSImpactEmbeddingPaperRetriever, PaperText, PubMedQA
 from summary_utils import Summary
 from VarSum_germline import GermlineVarSum
 try:
@@ -78,6 +76,8 @@ paper_impact_ranker = PaperImpactRanker(None)
 umls_impact_paper_retriever = UMLSImpactPaperRetriever(None, None)
 embedding_paper_retriever = EmbeddingPaperRetriever(None, None, None)
 umls_impact_embedding_paper_retriever = UMLSImpactEmbeddingPaperRetriever(None, None)
+paper_text = PaperText(None)
+pubmed_qa = PubMedQA(None, None)
 kb_type = None
 show_aid = False
 
@@ -230,6 +230,11 @@ def serve_umls_impact_paper_search():
 @app.route("/umls_impact_embedding_paper_search")
 def serve_umls_impact_embedding_paper_search():
     return render_template("umls_impact_embedding_paper_search.html")
+
+
+@app.route("/pubmed_qa")
+def serve_pubmed_qa():
+    return render_template("pubmed_qa.html")
 
 
 @app.route("/yolo")
@@ -3834,6 +3839,36 @@ def query_umls_impact_embedding_paper_search():
     return json.dumps(response)
 
 
+@app.route("/run_pubmed_qa", methods=["GET", "POST"])
+def run_pubmed_qa():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[run_pubmed_qa:query] {query}")
+
+    text = query.get("query")
+    level = query.get("level", None)
+    response = pubmed_qa.query(text, level=level, is_html=True)
+    return json.dumps(response)
+
+
+@app.route("/query_pubmed_qa", methods=["GET", "POST"])
+def query_pubmed_qa():
+    # query
+    if request.method == "GET":
+        query = json.loads(request.args.get("query"))
+    else:
+        query = json.loads(request.data)["query"]
+    logger.info(f"[query_pubmed_qa:query] {query}")
+
+    text = query.get("query")
+    level = query.get("level", None)
+    response = pubmed_qa.query(text, level=level, is_html=False)
+    return json.dumps(response)
+
+
 @app.route("/run_yolo", methods=["GET", "POST"])
 def run_yolo():
     # query
@@ -3897,6 +3932,7 @@ class Arg:
         self.query_embedding = raw_arg.get("query_embedding")
         self.qdrant_server = raw_arg.get("qdrant_server")
         self.qdrant_collection = raw_arg.get("qdrant_collection")
+        self.paper_text_dir = raw_arg.get("paper_text_dir")
         self.kb_type = raw_arg.get("kb_type")
         self.kb_dir = raw_arg.get("kb_dir")
         self.show_aid = raw_arg.get("show_aid", "false")
@@ -4013,6 +4049,14 @@ def main():
             umls_impact_paper_retriever=umls_impact_paper_retriever,
             embedding_paper_retriever=embedding_paper_retriever,
         )
+
+    if arg.paper_text_dir:
+        global paper_text
+        paper_text = PaperText(arg.paper_text_dir)
+
+    if arg.umls_dir and arg.paper_impact_dir and arg.query_embedding and arg.paper_text_dir:
+        global pubmed_qa
+        pubmed_qa = PubMedQA(umls_impact_embedding_paper_retriever, paper_text)
 
     if True:
         global show_aid

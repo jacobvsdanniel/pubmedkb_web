@@ -11,16 +11,16 @@ import difflib
 import logging
 import argparse
 import unicodedata
+import urllib.parse
 from collections import defaultdict
 
 import requests
 import spacy
-import retriv
-from retriv import DenseRetriever
 import torch
 from transformers import AutoTokenizer, AutoModel
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchAny
+from openai import OpenAI
 
 try:
     from gpt_utils import async_run_qa, run_qa, run_qa_stream, run_qka_stream, run_pqa_stream
@@ -1109,6 +1109,189 @@ class UMLSImpactEmbeddingPaperRetriever:
         return pmid_list
 
 
+class PaperText:
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self.db = None
+
+        if data_dir:
+            self.load_data()
+        return
+
+    def load_data(self):
+        import dbm.gnu
+
+        # GDBM DB
+        logger.info("[Paper Text] loading DB...")
+        run_time = time.time()
+        db_file = os.path.join(self.data_dir, "pmid_text_db.bin")
+        self.db = dbm.gnu.open(db_file, "r")
+        run_time = time.time() - run_time
+        logger.info(f"[Paper Text] loaded DB in {run_time:,.1f} sec")
+        return
+
+    def query(self, pmid):
+        text = self.db.get(pmid, None)
+        if text is None:
+            return "", ""
+        title, abstract = json.loads(text)
+        return title, abstract
+
+
+class FedGPT:
+    def __init__(self):
+        self.conv_url = "https://10.7.240.11/api/chat/v2/conversations"
+        self.chat_url = "https://10.7.240.11/api/chat/v2/chat/normal"
+        self.header = {"Accept": "application/json", "X-Api-Key": os.environ["FEDGPT_API_KEY"]}
+        return
+
+    def prompt(self, prompt, model="fedgpt-medium"):
+        # request #1: conversion
+        body = {
+            "conversation": {
+                "title": prompt[:50],
+                "model": model,
+                "mode": "normal",
+                "params": [],
+            }
+        }
+        response = requests.post(self.conv_url, headers=self.header, json=body, verify=False)
+        conv_id = response.json()["conversation"]["convId"]
+
+        # request #2: chat
+        body = {
+            "convId": conv_id,
+            "message": {
+                "text": prompt,
+            },
+        }
+        response = requests.post(self.chat_url, headers=self.header, json=body, verify=False)
+        response = response.json()["messages"][0]["text"]
+        return response
+
+
+class PubMedQA:
+    def __init__(self, umls_impact_embedding_paper_retriever, paper_text):
+        self.umls_impact_embedding_paper_retriever = umls_impact_embedding_paper_retriever
+        self.paper_text = paper_text
+        self.fedgpt = FedGPT()
+        self.instruction = """You are a researcher. Based on the provided reference document, answer the user's question with the following guidelines:
+1. Only rely on the reference document for reasoning and answering. Do not fabricate or assume information that is not explicitly stated.
+2. Use a professional tone and respond in the same language as the user (limited to English or Chinese).
+3. If the reference documents do not contain sufficient information to answer the question, simply state: \"the documents do not contain sufficient information to answer the question.\""""
+        self.retrieval_papers = 20
+        self.max_abstract_characters = 5000
+        return
+
+    def get_paper_list(self, query):
+        start_time = time.time()
+
+        paper_list = []
+        pmid_list = self.umls_impact_embedding_paper_retriever.query(query, top_k=self.retrieval_papers)
+        for pmid in pmid_list:
+            title, abstract = self.paper_text.query(pmid)
+            if title and abstract:
+                paper_list.append((pmid, title, abstract))
+        del pmid_list
+
+        run_time = time.time() - start_time
+        logger.info(f"[PubMedQA] retrieved {len(paper_list):,} papers in {run_time:.1f} sec")
+        return paper_list
+
+    def get_context(self, paper_list):
+        context = ["Reference documents:"]
+        for pmid, title, abstract in paper_list:
+            context.append(f"[PMID-{pmid}]\nTitle: {title}\nAbstract: {abstract[:self.max_abstract_characters]}")
+        context = "\n\n".join(context)
+        return context
+
+    def get_generation(self, query, context, level):
+        if level == 0:
+            model = "fedgpt-medium"
+            max_context_characters = 120000
+        elif level == 1:
+            model = "gpt-4.1-nano"
+            max_context_characters = 4000000
+        elif level == 2:
+            model = "gpt-4.1-mini"
+            max_context_characters = 4000000
+        else:
+            model = "gpt-4.1"
+            max_context_characters = 4000000
+
+        prompt = [
+            self.instruction,
+            context[:max_context_characters],
+            f"Question:\n{query}",
+        ]
+        prompt = "\n\n".join(prompt)
+
+        if model.startswith("gpt"):
+            start_time = time.time()
+            client = OpenAI()
+            completion = client.chat.completions.create(
+                model=model,
+                n=1,
+                messages=[
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            response = completion.choices[0].message.content
+            run_time = time.time() - start_time
+            logger.info(f"[PubMedQA] {model} generated a {len(response):,}-character response in {run_time:.1f} sec")
+
+        elif model.startswith("fedgpt"):
+            start_time = time.time()
+            response = self.fedgpt.prompt(prompt)
+            run_time = time.time() - start_time
+            logger.info(f"[PubMedQA] {model} generated a {len(response):,}-character response in {run_time:.1f} sec")
+
+        else:
+            response = "Not implemented."
+
+        return response
+
+    def get_reference(self, paper_list, is_html):
+        if is_html:
+            reference = ["References"]
+            for pmid, title, _abstract in paper_list:
+                pmid_url = urllib.parse.quote(pmid)
+                pmid_html = html.escape(f"[PMID-{pmid}]")
+                title_html = html.escape(title)
+
+                reference.append(
+                    f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid_url}">{pmid_html}</a> {title_html}'
+                )
+            reference = "<br />".join(reference)
+
+        else:
+            reference = ["References"]
+            for pmid, title, _abstract in paper_list:
+                reference.append(f"[{pmid}] {title}")
+            reference = "\n".join(reference)
+
+        return reference
+
+    def query(self, query, level=None, is_html=False):
+        start_time = time.time()
+
+        paper_list = self.get_paper_list(query)
+        context = self.get_context(paper_list)
+        generation = self.get_generation(query, context, level)
+        reference = self.get_reference(paper_list, is_html)
+        del paper_list, context
+
+        if is_html:
+            response = generation.replace("\n", "<br />")
+            response = f"{response}<br /><br />{reference}"
+        else:
+            response = f"{generation}\n\n{reference}"
+
+        run_time = time.time() - start_time
+        logger.info(f"[PubMedQA] in {run_time:.1f} sec, processed query: {query}")
+        return response
+
+
 class VariantNEN:
     def __init__(self, variant_dir):
         self.id_to_name = defaultdict(lambda: [])
@@ -2139,6 +2322,8 @@ class QA:
         return
 
     def load_data(self):
+        import retriv
+        from retriv import DenseRetriever
         retriv.set_base_path(self.retriv_dir)
         logger.info(f"[qa] loading retriv index ...")
         self.retriever = DenseRetriever.load("dense_dgp_2025")
