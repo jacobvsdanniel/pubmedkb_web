@@ -1,7 +1,6 @@
 import os
 import csv
 import sys
-import copy
 import html
 import json
 import time
@@ -10,11 +9,14 @@ import asyncio
 import difflib
 import logging
 import argparse
+import traceback
 import unicodedata
 import urllib.parse
 from collections import defaultdict
 
+import dbm.gnu
 import requests
+import backoff
 import spacy
 import torch
 from transformers import AutoTokenizer, AutoModel
@@ -112,6 +114,13 @@ def read_csv(file, dialect, write_log=True):
         rows = len(row_list)
         logger.info(f"Read {rows:,} rows")
     return row_list
+
+
+def backoff_handler(details):
+    logger.info(
+        "Backing off {wait:0.1f} seconds after {tries} tries calling function {target}".format(**details)
+    )
+    return
 
 
 class DiskDict:
@@ -576,7 +585,7 @@ class NCBIGene2025:
         return Gene(gene_id=gene_id, symbol=symbol, tax_id=tax_id, taxon=taxon)
 
 
-class UMLSCUI:
+class _UMLSCUI:
     def __init__(self, cui="", preferred_name="", name_list=None, source_code_list=None):
         self.cui = cui
         self.preferred_name = preferred_name
@@ -597,7 +606,7 @@ class UMLSCUI:
         ]
 
 
-class UMLSName:
+class _UMLSName:
     def __init__(self, name="", cui_list=None):
         self.name = name
         self.cui_list = cui_list if cui_list else []
@@ -616,7 +625,7 @@ class UMLSName:
         ]
 
 
-class UMLSSourceCode:
+class _UMLSSourceCode:
     def __init__(self, source="", code="", cui_list=None):
         self.source = source
         self.code = code
@@ -641,7 +650,7 @@ class UMLSSourceCode:
         return ""
 
 
-class UMLSIndex:
+class _UMLSIndex:
     def __init__(self, data_dir):
         self.data_dir = data_dir
         self.cui_str_to_cui_obj = {}
@@ -662,7 +671,7 @@ class UMLSIndex:
             header = next(reader)
             assert header == ["CUI", "preferred_name"]
             for cui_string, preferred_name in reader:
-                self.cui_str_to_cui_obj[cui_string] = UMLSCUI(cui=cui_string, preferred_name=preferred_name)
+                self.cui_str_to_cui_obj[cui_string] = _UMLSCUI(cui=cui_string, preferred_name=preferred_name)
         cuis = len(self.cui_str_to_cui_obj)
         logger.info(f"[UMLS index] read {cuis:,} CUIs")
 
@@ -680,10 +689,10 @@ class UMLSIndex:
                 name = self.name_str_to_name_obj.get(name_string)
                 name_lower = self.name_lower_str_to_name_lower_obj.get(name_lower_string)
                 if name is None:
-                    name = UMLSName(name=name_string)
+                    name = _UMLSName(name=name_string)
                     self.name_str_to_name_obj[name_string] = name
                 if name_lower is None:
-                    name_lower = UMLSName(name=name_lower_string)
+                    name_lower = _UMLSName(name=name_lower_string)
                     self.name_lower_str_to_name_lower_obj[name_lower_string] = name_lower
                     name_lower.cui_dict = {}
                 cui.name_list.append(name)
@@ -708,13 +717,81 @@ class UMLSIndex:
                 source_code_string = (source, code)
                 source_code = self.source_code_str_to_source_code_obj.get(source_code_string)
                 if source_code is None:
-                    source_code = UMLSSourceCode(source=source, code=code)
+                    source_code = _UMLSSourceCode(source=source, code=code)
                     self.source_code_str_to_source_code_obj[source_code_string] = source_code
                 cui.source_code_list.append(source_code)
                 source_code.cui_list.append(cui)
         source_codes = len(self.source_code_str_to_source_code_obj)
         logger.info(f"[UMLS index] read {source_codes:,} source-code pairs")
         return
+
+
+class UMLSIndex:
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self.cui_to_data_db = {}
+        self.name_to_cui_db = {}
+        self.name_lower_to_cui_db = {}
+        self.source_code_to_cui_db = {}
+
+        if self.data_dir:
+            self.load_data()
+        return
+
+    def load_data(self):
+        logger.info(f"[UMLS Index] opening DBs...")
+        start_time = time.time()
+
+        cui_to_data_db_file = os.path.join(self.data_dir, "cui_to_data_db.bin")
+        name_to_cui_db_file = os.path.join(self.data_dir, "name_to_cui_db.bin")
+        name_lower_to_cui_db_file = os.path.join(self.data_dir, "name_lower_to_cui_db.bin")
+        source_code_to_cui_db_file = os.path.join(self.data_dir, "source_code_to_cui_db.bin")
+
+        self.cui_to_data_db = dbm.gnu.open(cui_to_data_db_file, "r")
+        self.name_to_cui_db = dbm.gnu.open(name_to_cui_db_file, "r")
+        self.name_lower_to_cui_db = dbm.gnu.open(name_lower_to_cui_db_file, "r")
+        self.source_code_to_cui_db = dbm.gnu.open(source_code_to_cui_db_file, "r")
+
+        run_time = time.time() - start_time
+        logger.info(f"[UMLS Index] opened DBs in {run_time:.1f} sec")
+        return
+
+    def query_cui_to_data(self, cui):
+        data = self.cui_to_data_db.get(cui)
+
+        if data:
+            preferred_name, name_list, source_code_list = json.loads(data)
+        else:
+            preferred_name, name_list, source_code_list = "", [], []
+        return preferred_name, name_list, source_code_list
+
+    def query_name_to_cui(self, name):
+        data = self.name_to_cui_db.get(name)
+
+        if data:
+            cui_list = json.loads(data)
+        else:
+            cui_list = []
+        return cui_list
+
+    def query_name_lower_to_cui(self, name_lower):
+        data = self.name_lower_to_cui_db.get(name_lower)
+
+        if data:
+            cui_list = json.loads(data)
+        else:
+            cui_list = []
+        return cui_list
+
+    def query_source_code_to_cui(self, source, code):
+        source_code = json.dumps((source, code))
+        data = self.source_code_to_cui_db.get(source_code)
+
+        if data:
+            cui_list = json.loads(data)
+        else:
+            cui_list = []
+        return cui_list
 
 
 class UMLSDoc:
@@ -731,12 +808,13 @@ class UMLSDoc:
         #    note: token.idx is the token's starting character offset
         token_index_to_character_index = [token.idx for token in doc] + [len(doc.text)]
         tokens = len(doc)
+        text = doc.text
         if case_sensitive:
-            text = doc.text
-            name_str_to_name_obj = self.umls_index.name_str_to_name_obj
+            text_for_query = text
+            query_name_to_cui = self.umls_index.query_name_to_cui
         else:
-            text = doc.text.lower()
-            name_str_to_name_obj = self.umls_index.name_lower_str_to_name_lower_obj
+            text_for_query = text.lower()
+            query_name_to_cui = self.umls_index.query_name_lower_to_cui
 
         # iterate through all tokens spans
         #   index naming:
@@ -761,19 +839,20 @@ class UMLSDoc:
                 # check character length
                 if term_length < min_concept_characters or max_concept_characters < term_length:
                     continue
-                term = text[begin_character_index:end_character_index]
 
                 # check if the term is in UMLS
-                name = name_str_to_name_obj.get(term)
-                if name is None:
+                name_for_query = text_for_query[begin_character_index:end_character_index]
+                cui_list = query_name_to_cui(name_for_query)
+                if not cui_list:
                     continue
+                name = text[begin_character_index:end_character_index]
 
-                name_dict[name.name] = True
-                for cui in name.cui_list:
-                    cui_dict[cui.cui] = True
+                name_dict[name] = True
+                for cui in cui_list:
+                    cui_dict[cui] = True
 
-        name_list = list(name_dict)
-        cui_list = list(cui_dict)
+        name_list = list(name_dict.keys())
+        cui_list = list(cui_dict.keys())
         return name_list, cui_list
 
     def annotate(
@@ -886,9 +965,6 @@ class PaperImpactRanker:
         return
 
     def load_data(self):
-        import dbm.gnu
-
-        # GDBM DB
         logger.info("[Paper Impact Ranker] loading DB...")
         run_time = time.time()
         db_file = os.path.join(self.data_dir, "pmid_rank_db.bin")
@@ -1119,9 +1195,6 @@ class PaperText:
         return
 
     def load_data(self):
-        import dbm.gnu
-
-        # GDBM DB
         logger.info("[Paper Text] loading DB...")
         run_time = time.time()
         db_file = os.path.join(self.data_dir, "pmid_text_db.bin")
@@ -1145,6 +1218,10 @@ class FedGPT:
         self.header = {"Accept": "application/json", "X-Api-Key": os.environ["FEDGPT_API_KEY"]}
         return
 
+    @backoff.on_exception(backoff.expo,
+                          Exception,
+                          max_tries=5,
+                          on_backoff=backoff_handler)
     def prompt(self, prompt, model="fedgpt-medium"):
         # request #1: conversion
         body = {
@@ -1241,10 +1318,14 @@ class PubMedQA:
             logger.info(f"[PubMedQA] {model} generated a {len(response):,}-character response in {run_time:.1f} sec")
 
         elif model.startswith("fedgpt"):
-            start_time = time.time()
-            response = self.fedgpt.prompt(prompt)
-            run_time = time.time() - start_time
-            logger.info(f"[PubMedQA] {model} generated a {len(response):,}-character response in {run_time:.1f} sec")
+            try:
+                start_time = time.time()
+                response = self.fedgpt.prompt(prompt)
+                run_time = time.time() - start_time
+                logger.info(f"[PubMedQA] {model} generated a {len(response):,}-character response in {run_time:.1f} sec")
+            except Exception:
+                logger.info(f"[PubMedQA] fedgpt generation error:\n{traceback.format_exc()}")
+                return "***" + self.get_generation(query, context, 3)
 
         else:
             response = "Not implemented."
@@ -2602,39 +2683,42 @@ class CGDInferenceKB:
         if max_pmids_per_cg_gd is None:
             max_pmids_per_cg_gd = 3
 
+        # unique c and d
+        c_dict = {c: True for c in c_list}
+        d_dict = {d: True for d in d_list}
+        del c_list, d_list
+
         # map name to id
         if umls_index:
-            c_list = copy.copy(c_list)
-            d_list = copy.copy(d_list)
-            for query_list in [c_list, d_list]:
+            for query_dict in [c_dict, d_dict]:
                 result_list = []
-                for query in query_list:
-                    name = umls_index.name_lower_str_to_name_lower_obj.get(query.lower())
-                    if not name:
-                        continue
-                    for cui in name.cui_list:
-                        for source_code in cui.source_code_list:
-                            if source_code.source == "MSH":
-                                result_list.append(source_code.code)
-                query_list.extend(result_list)
+                for query in query_dict:
+                    cui_list = umls_index.query_name_lower_to_cui(query.lower())
+                    for cui in cui_list:
+                        _preferred_name, _name_list, source_code_list = umls_index.query_cui_to_data(cui)
+                        for source, code in source_code_list:
+                            if source == "MSH":
+                                result_list.append(code)
+                for result in result_list:
+                    query_dict[result] = True
                 del result_list
 
         # retrieve CD data indices
         index_list = []
-        if c_list:
-            if d_list:
-                for c in c_list:
-                    for d in d_list:
+        if c_dict:
+            if d_dict:
+                for c in c_dict:
+                    for d in d_dict:
                         index = self.c_d_index.get(c, {}).get(d, None)
                         if index is not None:
                             index_list.append(index)
             else:
-                for c in c_list:
+                for c in c_dict:
                     for _d, index in self.c_d_index.get(c, {}).items():
                         index_list.append(index)
         else:
-            if d_list:
-                for d in d_list:
+            if d_dict:
+                for d in d_dict:
                     for _c, index in self.d_c_index.get(d, {}).items():
                         index_list.append(index)
 

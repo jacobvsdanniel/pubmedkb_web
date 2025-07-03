@@ -21,7 +21,7 @@ from kb_utils import ner_gvdc_mapping, entity_type_to_real_type_mapping
 from kb_utils import get_paper_meta_html
 from kb_utils import CGDInferenceKB
 from kb_utils import NCBIGene2025
-from kb_utils import UMLSIndex, UMLSCUI, UMLSName, UMLSSourceCode, UMLSDoc, UMLSPaperRetriever
+from kb_utils import UMLSIndex, UMLSDoc, UMLSPaperRetriever
 from kb_utils import PaperImpactRanker, UMLSImpactPaperRetriever, EmbeddingPaperRetriever
 from kb_utils import UMLSImpactEmbeddingPaperRetriever, PaperText, PubMedQA
 from summary_utils import Summary
@@ -3251,18 +3251,22 @@ def run_cgd_drug_discovery():
 
     html_large_break = '<br style="display: block; content: \' \'; margin-top: 10px;" />'
 
+    def get_first_name(code):
+        cui_list = umls_index.query_source_code_to_cui("MSH", code)
+        for cui in cui_list:
+            preferred_name, _name_list, _source_code_list = umls_index.query_cui_to_data(cui)
+            if preferred_name:
+                return preferred_name
+        return ""
+
     for rank, (c, d, cd_score, all_cgds, cgd_data) in enumerate(cd_data):
         html_rank = html.escape(f"#{rank + 1}")
         html_cd_score = html.escape(cd_score)
 
-        c_name = umls_index.source_code_str_to_source_code_obj.get(
-            ("MSH", c), UMLSSourceCode(source="MSH", code=c),
-        ).get_first_name()
+        c_name = get_first_name(c)
         html_c = f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={c}">{c}</a><br />' + html.escape(c_name)
 
-        d_name = umls_index.source_code_str_to_source_code_obj.get(
-            ("MSH", d), UMLSSourceCode(source="MSH", code=d),
-        ).get_first_name()
+        d_name = get_first_name(d)
         html_d = f'<a href="https://meshb.nlm.nih.gov/record/ui?ui={d}">{d}</a><br />' + html.escape(d_name)
 
         html_cgds = html.escape(f"{all_cgds:,}")
@@ -3407,15 +3411,24 @@ def run_umls_cui():
     logger.info(f"[run_umls_cui:query] {query}")
 
     cui = query.get("cui")
-    cui = umls_index.cui_str_to_cui_obj.get(cui, UMLSCUI(cui=cui))
-    logger.info(f"[run_umls_cui] cui={cui}")
+    preferred_name, name_list, source_code_list = umls_index.query_cui_to_data(cui)
+    logger.info(f"[run_umls_cui] cui={cui} preferred_name={preferred_name}")
+
+    # table data
+    attribute_value_list = [
+        ("CUI", (cui, preferred_name)),
+    ]
+    for name in name_list:
+        attribute_value_list.append(("name", name))
+    for source, code in source_code_list:
+        attribute_value_list.append(("source-code", (source, code)))
 
     html_table = (f'<table><tr>'
                   f'<th>Attribute</th>'
                   f'<th>Value</th>'
                   f'</tr>')
 
-    for attribute, value in cui.get_graph_json():
+    for attribute, value in attribute_value_list:
         html_attribute = html.escape(attribute)
         if isinstance(value, str):
             html_value = html.escape(value)
@@ -3447,13 +3460,17 @@ def query_umls_cui():
     logger.info(f"[query_umls_cui:query] {query}")
 
     cui = query.get("cui")
-    cui = umls_index.cui_str_to_cui_obj.get(cui, UMLSCUI(cui=cui))
-    logger.info(f"[query_umls_cui] cui={cui}")
+    preferred_name, name_list, source_code_list = umls_index.query_cui_to_data(cui)
+    logger.info(f"[query_umls_cui] cui={cui} preferred_name={preferred_name}")
 
     # result
     response = {
         "query": query,
-        "result": cui.get_graph_json(),
+        "result": {
+            "preferred_name": preferred_name,
+            "name_list": name_list,
+            "source_code_list": source_code_list,
+        },
     }
     return json.dumps(response)
 
@@ -3470,18 +3487,25 @@ def run_umls_name():
     name = query.get("name")
     case_sensitive = query.get("case-sensitive", False)
     if case_sensitive:
-        name = umls_index.name_str_to_name_obj.get(name, UMLSName(name=name))
+        cui_list = umls_index.query_name_to_cui(name)
     else:
-        name = name.lower()
-        name = umls_index.name_lower_str_to_name_lower_obj.get(name, UMLSName(name=name))
-    logger.info(f"[run_umls_name] name={name}")
+        cui_list = umls_index.query_name_lower_to_cui(name.lower())
+    logger.info(f"[run_umls_name] name={name} cui_list={cui_list}")
+
+    # table data
+    attribute_value_list = [
+        ("name", name),
+    ]
+    for cui in cui_list:
+        preferred_name, _name_list, _source_code_list = umls_index.query_cui_to_data(cui)
+        attribute_value_list.append(("CUI", (cui, preferred_name)))
 
     html_table = (f'<table><tr>'
                   f'<th>Attribute</th>'
                   f'<th>Value</th>'
                   f'</tr>')
 
-    for attribute, value in name.get_graph_json():
+    for attribute, value in attribute_value_list:
         html_attribute = html.escape(attribute)
         if isinstance(value, str):
             html_value = html.escape(value)
@@ -3513,18 +3537,19 @@ def query_umls_name():
     logger.info(f"[query_umls_name:query] {query}")
 
     name = query.get("name")
-    case_sensitive = query.get("case_sensitive", False)
+    case_sensitive = query.get("case-sensitive", False)
     if case_sensitive:
-        name = umls_index.name_str_to_name_obj.get(name, UMLSName(name=name))
+        cui_list = umls_index.query_name_to_cui(name)
     else:
-        name = name.lower()
-        name = umls_index.name_lower_str_to_name_lower_obj.get(name, UMLSName(name=name))
-    logger.info(f"[query_umls_name] name={name}")
+        cui_list = umls_index.query_name_lower_to_cui(name.lower())
+    logger.info(f"[query_umls_name] name={name} cui_list={cui_list}")
 
     # result
     response = {
         "query": query,
-        "result": name.get_graph_json(),
+        "result": {
+            "cui_list": cui_list,
+        },
     }
     return json.dumps(response)
 
@@ -3540,17 +3565,23 @@ def run_umls_source_code():
 
     source = query.get("source")
     code = query.get("code")
-    source_code = umls_index.source_code_str_to_source_code_obj.get(
-        (source, code), UMLSSourceCode(source=source, code=code),
-    )
-    logger.info(f"[run_umls_source_code] source_code={source_code}")
+    cui_list = umls_index.query_source_code_to_cui(source, code)
+    logger.info(f"[run_umls_source_code] source={source} code={code} cui_list={cui_list}")
+
+    # table data
+    attribute_value_list = [
+        ("source-code", (source, code)),
+    ]
+    for cui in cui_list:
+        preferred_name, _name_list, _source_code_list = umls_index.query_cui_to_data(cui)
+        attribute_value_list.append(("CUI", (cui, preferred_name)))
 
     html_table = (f'<table><tr>'
                   f'<th>Attribute</th>'
                   f'<th>Value</th>'
                   f'</tr>')
 
-    for attribute, value in source_code.get_graph_json():
+    for attribute, value in attribute_value_list:
         html_attribute = html.escape(attribute)
         if isinstance(value, str):
             html_value = html.escape(value)
@@ -3583,15 +3614,15 @@ def query_umls_source_code():
 
     source = query.get("source")
     code = query.get("code")
-    source_code = umls_index.source_code_str_to_source_code_obj.get(
-        (source, code), UMLSSourceCode(source=source, code=code),
-    )
-    logger.info(f"[query_umls_source_code] source_code={source_code}")
+    cui_list = umls_index.query_source_code_to_cui(source, code)
+    logger.info(f"[run_umls_source_code] source={source} code={code} cui_list={cui_list}")
 
     # result
     response = {
         "query": query,
-        "result": source_code.get_graph_json(),
+        "result": {
+            "cui_list": cui_list,
+        },
     }
     return json.dumps(response)
 
@@ -4024,7 +4055,8 @@ def main():
 
     if arg.umls_dir:
         global umls_index, umls_doc, umls_paper_retriever
-        umls_index = UMLSIndex(arg.umls_dir)
+        umls_index_dir = os.path.join(arg.umls_dir, "gdbm")
+        umls_index = UMLSIndex(umls_index_dir)
         umls_doc = UMLSDoc(umls_index)
         retriever_dir = os.path.join(arg.umls_dir, "pubmed_bm25")
         umls_paper_retriever = UMLSPaperRetriever(retriever_dir, umls_doc)
