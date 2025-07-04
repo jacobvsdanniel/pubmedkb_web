@@ -2603,7 +2603,7 @@ class QA:
         return answer_completion, p_set
 
 
-class CGDInferenceKB:
+class _CGDInferenceKB:
     def __init__(self, data_dir):
         self.data_dir = data_dir
         self.c_d_score_pathlist_list = []
@@ -2740,6 +2740,135 @@ class CGDInferenceKB:
             for g, cgd_score in pathlist[:max_cgds_per_cd]:
                 cg_relation, cg_pmid_list = self.c_g_relationpmidlist[c][g]
                 gd_relation, gd_pmid_list = self.g_d_relationpmidlist[g][d]
+                all_cg_pmids = len(cg_pmid_list)
+                all_gd_pmids = len(gd_pmid_list)
+                cgd_data.append((
+                    g, cgd_score,
+                    cg_relation, gd_relation,
+                    all_cg_pmids, all_gd_pmids,
+                    cg_pmid_list[:max_pmids_per_cg_gd], gd_pmid_list[:max_pmids_per_cg_gd]
+                ))
+            cd_data.append((c, d, cd_score, all_cgds, cgd_data))
+
+        return all_cds, cd_data
+
+
+class CGDInferenceKB:
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self.cg_to_relation_db = {}
+        self.gd_to_relation_db = {}
+        self.cd_index_to_path_db = {}
+        self.c_d_index = defaultdict(lambda: {})
+        self.d_c_index = defaultdict(lambda: {})
+
+        if data_dir:
+            self.load_data()
+        return
+
+    def load_data(self):
+        prefix = "[CGD Inference KB]"
+        logger.info(f"{prefix} loading DB...")
+
+        # CG/GD -> (relation, pmid_list)
+        start_time = time.time()
+        cg_db_file = os.path.join(self.data_dir, "CG_to_relation_db.bin")
+        gd_db_file = os.path.join(self.data_dir, "GD_to_relation_db.bin")
+        self.cg_to_relation_db = dbm.gnu.open(cg_db_file, "r")
+        self.gd_to_relation_db = dbm.gnu.open(gd_db_file, "r")
+        run_time = time.time() - start_time
+        logger.info(f"{prefix} loaded DB: CG/GD -> (relation, pmid_list) in {run_time:.1f} sec")
+
+        # index -> (C, D, score, CGD paths)
+        # C -> D -> index
+        # D -> C -> index
+        start_time = time.time()
+        cd_db_file = os.path.join(self.data_dir, "CD_index_to_path_db.bin")
+        self.cd_index_to_path_db = dbm.gnu.open(cd_db_file, "r")
+        cd_index_file = os.path.join(self.data_dir, "CD.csv")
+        with open(cd_index_file, "r", encoding="utf8", newline="") as f:
+            reader = csv.reader(f, dialect="csv")
+            for index, (c, d) in enumerate(reader):
+                self.c_d_index[c][d] = index
+                self.d_c_index[d][c] = index
+        run_time = time.time() - start_time
+        logger.info(f"{prefix} loaded DB: CD -> index -> (C, D, score, CGD paths) in {run_time:.1f} sec")
+        return
+
+    def query(self,
+              c_list=None, d_list=None,
+              max_cds=None, max_cgds_per_cd=None, max_pmids_per_cg_gd=None,
+              umls_index=None,
+              ):
+        # default arguments
+        if c_list is None:
+            c_list = []
+        if d_list is None:
+            d_list = []
+        if max_cds is None:
+            max_cds = 10
+        if max_cgds_per_cd is None:
+            max_cgds_per_cd = 10
+        if max_pmids_per_cg_gd is None:
+            max_pmids_per_cg_gd = 3
+
+        # unique c and d
+        c_dict = {c: True for c in c_list}
+        d_dict = {d: True for d in d_list}
+        del c_list, d_list
+
+        # map name to id
+        if umls_index:
+            for query_dict in [c_dict, d_dict]:
+                result_list = []
+                for query in query_dict:
+                    cui_list = umls_index.query_name_lower_to_cui(query.lower())
+                    for cui in cui_list:
+                        _preferred_name, _name_list, source_code_list = umls_index.query_cui_to_data(cui)
+                        for source, code in source_code_list:
+                            if source == "MSH":
+                                result_list.append(code)
+                for result in result_list:
+                    query_dict[result] = True
+                del result_list
+
+        # retrieve CD data indices
+        index_list = []
+        if c_dict:
+            if d_dict:
+                for c in c_dict:
+                    for d in d_dict:
+                        index = self.c_d_index.get(c, {}).get(d, None)
+                        if index is not None:
+                            index_list.append(index)
+            else:
+                for c in c_dict:
+                    for _d, index in self.c_d_index.get(c, {}).items():
+                        index_list.append(index)
+        else:
+            if d_dict:
+                for d in d_dict:
+                    for _c, index in self.d_c_index.get(d, {}).items():
+                        index_list.append(index)
+
+        # sort index list
+        #   CD data should have been sorted by score
+        all_cds = len(index_list)
+        if max_cds < all_cds / 4:
+            index_list = heapq.nsmallest(max_cds, index_list)
+        else:
+            index_list = sorted(index_list)[:max_cds]
+
+        # collect data
+        #   path data should have been sorted by score
+        cd_data = []
+        for index in index_list:
+            c, d, cd_score, pathlist = json.loads(self.cd_index_to_path_db[json.dumps(index)])
+            all_cgds = len(pathlist)
+            cgd_data = []
+            for g, cgd_score in pathlist[:max_cgds_per_cd]:
+                cg_relation, cg_pmid_list = json.loads(self.cg_to_relation_db[json.dumps((c, g))])
+                gd_relation, gd_pmid_list = json.loads(self.gd_to_relation_db[json.dumps((g, d))])
                 all_cg_pmids = len(cg_pmid_list)
                 all_gd_pmids = len(gd_pmid_list)
                 cgd_data.append((
