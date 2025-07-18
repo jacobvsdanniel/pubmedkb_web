@@ -1211,7 +1211,7 @@ class PaperText:
         return title, abstract
 
 
-class FedGPT:
+class _FedGPT:
     def __init__(self):
         self.conv_url = "https://10.7.240.11/api/chat/v2/conversations"
         self.chat_url = "https://10.7.240.11/api/chat/v2/chat/normal"
@@ -1244,6 +1244,29 @@ class FedGPT:
         }
         response = requests.post(self.chat_url, headers=self.header, json=body, verify=False)
         response = response.json()["messages"][0]["text"]
+        return response
+
+
+class FedGPT:
+    def __init__(self):
+        self.base_url = "https://ent.fedgpt.cc/debug/vllm/medium/v1"
+        return
+
+    def prompt(self, prompt, model):
+        start_time = time.time()
+
+        client = OpenAI(base_url=self.base_url, api_key="YOLO")
+        completion = client.chat.completions.create(
+            model=model,
+            n=1,
+            messages=[
+                {"role": "user", "content": prompt},
+            ],
+        )
+        response = completion.choices[0].message.content
+
+        run_time = time.time() - start_time
+        logger.info(f"[FedGPT OpenAI] in {run_time:.1f} sec, processed request: {prompt}")
         return response
 
 
@@ -1304,28 +1327,32 @@ class PubMedQA:
         prompt = "\n\n".join(prompt)
 
         if model.startswith("gpt"):
-            start_time = time.time()
-            client = OpenAI()
-            completion = client.chat.completions.create(
-                model=model,
-                n=1,
-                messages=[
-                    {"role": "user", "content": prompt},
-                ],
-            )
-            response = completion.choices[0].message.content
-            run_time = time.time() - start_time
-            logger.info(f"[PubMedQA] {model} generated a {len(response):,}-character response in {run_time:.1f} sec")
+            try:
+                start_time = time.time()
+                client = OpenAI()
+                completion = client.chat.completions.create(
+                    model=model,
+                    n=1,
+                    messages=[
+                        {"role": "user", "content": prompt},
+                    ],
+                )
+                response = completion.choices[0].message.content
+                run_time = time.time() - start_time
+                logger.info(f"[PubMedQA] {model} generated a {len(response):,}-character response in {run_time:.1f} sec")
+            except Exception:
+                logger.info(f"[PubMedQA] {model} generation error:\n{traceback.format_exc()}")
+                return f"{model} generation error"
 
         elif model.startswith("fedgpt"):
             try:
                 start_time = time.time()
-                response = self.fedgpt.prompt(prompt)
+                response = self.fedgpt.prompt(prompt, model)
                 run_time = time.time() - start_time
                 logger.info(f"[PubMedQA] {model} generated a {len(response):,}-character response in {run_time:.1f} sec")
             except Exception:
-                logger.info(f"[PubMedQA] fedgpt generation error:\n{traceback.format_exc()}")
-                return "***" + self.get_generation(query, context, 3)
+                logger.info(f"[PubMedQA] {model} generation error:\n{traceback.format_exc()}")
+                return f"{model} generation error"
 
         else:
             response = "Not implemented."
