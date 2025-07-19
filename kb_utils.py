@@ -1249,7 +1249,7 @@ class _FedGPT:
 
 class FedGPT:
     def __init__(self):
-        self.base_url = "https://ent.fedgpt.cc/debug/vllm/medium/v1"
+        self.base_url = os.environ["FEDGPT_BASE_URL"]
         return
 
     def prompt(self, prompt, model):

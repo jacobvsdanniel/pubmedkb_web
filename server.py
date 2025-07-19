@@ -3939,35 +3939,42 @@ def query_yolo():
 
 class Arg:
     def __init__(self):
+        self.data_home = os.environ.get("DATA_HOME")
+
         with open("server_config.json", "r", encoding="utf8") as f:
             raw_arg = json.load(f)
 
-        self.nen_dir = raw_arg.get("nen_dir")
-        self.meta_dir = raw_arg.get("meta_dir")
-        self.paper_dir = raw_arg.get("paper_dir")
-        self.gene_dir = raw_arg.get("gene_dir")
-        self.variant_dir = raw_arg.get("variant_dir")
-        self.variant_nen_dir = raw_arg.get("variant_nen_dir")
-        self.glof_dir = raw_arg.get("glof_dir")
-        self.gvd_score_dir = raw_arg.get("gvd_score_dir")
-        self.gd_score_file = raw_arg.get("gd_score_file")
-        self.gd_db_dir = raw_arg.get("gd_db_dir")
-        self.mesh_disease_dir = raw_arg.get("mesh_disease_dir")
-        self.chemical_nen_dir = raw_arg.get("chemical_nen_dir")
-        self.chemical_disease_dir = raw_arg.get("chemical_disease_dir")
-        self.retriv_dir = raw_arg.get("retriv_dir")
-        self.cgd_inference_kb_dir = raw_arg.get("cgd_inference_kb_dir")
-        self.gene_2025_dir = raw_arg.get("gene_2025_dir")
-        self.umls_dir = raw_arg.get("umls_dir")
-        self.paper_impact_dir = raw_arg.get("paper_impact_dir")
+        self.nen_dir = self.get_complete_path(raw_arg.get("nen_dir"))
+        self.meta_dir = self.get_complete_path(raw_arg.get("meta_dir"))
+        self.paper_dir = self.get_complete_path(raw_arg.get("paper_dir"))
+        self.gene_dir = self.get_complete_path(raw_arg.get("gene_dir"))
+        self.variant_dir = self.get_complete_path(raw_arg.get("variant_dir"))
+        self.variant_nen_dir = self.get_complete_path(raw_arg.get("variant_nen_dir"))
+        self.glof_dir = self.get_complete_path(raw_arg.get("glof_dir"))
+        self.gvd_score_dir = self.get_complete_path(raw_arg.get("gvd_score_dir"))
+        self.gd_score_file = self.get_complete_path(raw_arg.get("gd_score_file"))
+        self.gd_db_dir = self.get_complete_path(raw_arg.get("gd_db_dir"))
+        self.mesh_disease_dir = self.get_complete_path(raw_arg.get("mesh_disease_dir"))
+        self.chemical_nen_dir = self.get_complete_path(raw_arg.get("chemical_nen_dir"))
+        self.chemical_disease_dir = self.get_complete_path(raw_arg.get("chemical_disease_dir"))
+        self.retriv_dir = self.get_complete_path(raw_arg.get("retriv_dir"))
+        self.cgd_inference_kb_dir = self.get_complete_path(raw_arg.get("cgd_inference_kb_dir"))
+        self.gene_2025_dir = self.get_complete_path(raw_arg.get("gene_2025_dir"))
+        self.umls_dir = self.get_complete_path(raw_arg.get("umls_dir"))
+        self.paper_impact_dir = self.get_complete_path(raw_arg.get("paper_impact_dir"))
         self.query_embedding = raw_arg.get("query_embedding")
         self.qdrant_server = raw_arg.get("qdrant_server")
         self.qdrant_collection = raw_arg.get("qdrant_collection")
-        self.paper_text_dir = raw_arg.get("paper_text_dir")
+        self.paper_text_dir = self.get_complete_path(raw_arg.get("paper_text_dir"))
         self.kb_type = raw_arg.get("kb_type")
-        self.kb_dir = raw_arg.get("kb_dir")
+        self.kb_dir = self.get_complete_path(raw_arg.get("kb_dir"))
         self.show_aid = raw_arg.get("show_aid", "false")
         return
+
+    def get_complete_path(self, path):
+        if path is not None and self.data_home is not None:
+            path = os.path.join(self.data_home, path)
+        return path
 
 
 def main():
